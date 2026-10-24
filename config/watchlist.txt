@@ -1,0 +1,23 @@
+# 自选核心投资与跟踪组合 (User Watchlist)
+# 创建时间: 2026-10-23
+
+# --- 宽基指数 ETF ---
+QQQ          # 纳斯达克 100 指数 ETF
+SPY          # 标普 500 指数 ETF
+
+# --- 核心科技与数字平台 ---
+GOOGL        # Alphabet Inc. (Google)
+AAPL         # Apple Inc.
+
+# --- 芯片与半导体龙头 (AI 算力与存储) ---
+NVDA         # NVIDIA Corporation (GPU / AI 算力)
+AMD          # Advanced Micro Devices (CPU / GPU)
+INTC         # Intel Corporation (半导体与晶圆代工)
+MU           # Micron Technology, Inc. (存储芯片 DRAM/NAND)
+SNDK         # SanDisk (存储与闪存芯片)
+
+# --- 光通信与网络硬件 (AI 物理互联基础设施) ---
+LITE         # Lumentum Holdings Inc. (光模块 / 激光器 / 光通信)
+
+# --- 宏观加密资产 ---
+BTC-USD      # Bitcoin (比特币现货美元报价)

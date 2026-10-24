@@ -1,0 +1,47 @@
+# 方向层回测：样本池
+
+# 30 只美股，覆盖主要板块。每行一个代码，`#` 开头为注释。
+# 用途：python backtest.py --tickers-file tickers.txt --download
+#
+# ⚠️ 生存者偏差：这份名单是 2026 年的存续大市值股，天然排除了已退市/被并购/长期跑输的标的。
+#    净效果是**系统性高估**任何做多为主的策略。读到正结果时必须扣掉这个偏差。
+
+# 科技 / 半导体
+AAPL
+MSFT
+NVDA
+AVGO
+AMD
+INTC
+ORCL
+CRM
+ADBE
+
+# 互联网 / 消费平台
+AMZN
+GOOGL
+META
+NFLX
+TSLA
+
+# 金融
+JPM
+BAC
+GS
+V
+MA
+
+# 能源 / 工业
+XOM
+CVX
+CAT
+BA
+DIS
+
+# 医药 / 必需消费
+JNJ
+PFE
+UNH
+KO
+PEP
+WMT

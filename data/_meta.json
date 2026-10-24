@@ -1,0 +1,306 @@
+{
+  "AAPL": {
+    "source": "tencent",
+    "symbol": "usAAPL.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:11:35"
+  },
+  "MSFT": {
+    "source": "tencent",
+    "symbol": "usMSFT.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:02"
+  },
+  "NVDA": {
+    "source": "tencent",
+    "symbol": "usNVDA.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:15"
+  },
+  "AVGO": {
+    "source": "tencent",
+    "symbol": "usAVGO.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:21"
+  },
+  "AMD": {
+    "source": "tencent",
+    "symbol": "usAMD.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:26"
+  },
+  "INTC": {
+    "source": "tencent",
+    "symbol": "usINTC.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:30"
+  },
+  "ORCL": {
+    "source": "tencent",
+    "symbol": "usORCL.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:35"
+  },
+  "CRM": {
+    "source": "tencent",
+    "symbol": "usCRM.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:41"
+  },
+  "ADBE": {
+    "source": "tencent",
+    "symbol": "usADBE.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:49"
+  },
+  "AMZN": {
+    "source": "tencent",
+    "symbol": "usAMZN.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:53"
+  },
+  "GOOGL": {
+    "source": "tencent",
+    "symbol": "usGOOGL.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:12:56"
+  },
+  "META": {
+    "source": "tencent",
+    "symbol": "usMETA.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:02"
+  },
+  "NFLX": {
+    "source": "tencent",
+    "symbol": "usNFLX.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:05"
+  },
+  "TSLA": {
+    "source": "tencent",
+    "symbol": "usTSLA.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:11"
+  },
+  "JPM": {
+    "source": "tencent",
+    "symbol": "usJPM.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:14"
+  },
+  "BAC": {
+    "source": "tencent",
+    "symbol": "usBAC.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:19"
+  },
+  "GS": {
+    "source": "tencent",
+    "symbol": "usGS.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:23"
+  },
+  "V": {
+    "source": "tencent",
+    "symbol": "usV.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:28"
+  },
+  "MA": {
+    "source": "tencent",
+    "symbol": "usMA.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:33"
+  },
+  "XOM": {
+    "source": "tencent",
+    "symbol": "usXOM.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:37"
+  },
+  "CVX": {
+    "source": "tencent",
+    "symbol": "usCVX.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:43"
+  },
+  "CAT": {
+    "source": "tencent",
+    "symbol": "usCAT.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:49"
+  },
+  "BA": {
+    "source": "tencent",
+    "symbol": "usBA.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:54"
+  },
+  "DIS": {
+    "source": "tencent",
+    "symbol": "usDIS.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:13:59"
+  },
+  "JNJ": {
+    "source": "tencent",
+    "symbol": "usJNJ.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:04"
+  },
+  "PFE": {
+    "source": "tencent",
+    "symbol": "usPFE.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:09"
+  },
+  "UNH": {
+    "source": "tencent",
+    "symbol": "usUNH.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:13"
+  },
+  "KO": {
+    "source": "tencent",
+    "symbol": "usKO.N",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:19"
+  },
+  "PEP": {
+    "source": "tencent",
+    "symbol": "usPEP.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:23"
+  },
+  "WMT": {
+    "source": "tencent",
+    "symbol": "usWMT.OQ",
+    "bars": 1920,
+    "start": "2019-03-05",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:14:27"
+  },
+  "QQQ": {
+    "source": "tencent",
+    "symbol": "usQQQ.OQ",
+    "bars": 3894,
+    "start": "2011-04-26",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:40:33"
+  },
+  "SPY": {
+    "source": "sina",
+    "symbol": "SPY",
+    "bars": 4500,
+    "start": "2008-11-28",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:36:47"
+  },
+  "DIA": {
+    "source": "sina",
+    "symbol": "DIA",
+    "bars": 4500,
+    "start": "2008-11-28",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:37:00"
+  },
+  "IWM": {
+    "source": "sina",
+    "symbol": "IWM",
+    "bars": 4500,
+    "start": "2008-11-28",
+    "end": "2026-10-21",
+    "fetched_at": "2026-10-22 23:37:05"
+  },
+  "MU": {
+    "source": "eastmoney",
+    "symbol": "MU",
+    "bars": 4229,
+    "start": "2009-12-30",
+    "end": "2026-10-22",
+    "fetched_at": "2026-10-23 12:54:37"
+  },
+  "SNDK": {
+    "source": "tencent",
+    "symbol": "usSNDK.OQ",
+    "bars": 425,
+    "start": "2025-02-13",
+    "end": "2026-10-22",
+    "fetched_at": "2026-10-23 12:55:24"
+  },
+  "LITE": {
+    "source": "eastmoney",
+    "symbol": "LITE",
+    "bars": 2822,
+    "start": "2015-08-04",
+    "end": "2026-10-22",
+    "fetched_at": "2026-10-23 12:55:45"
+  },
+  "BTC-USD": {
+    "source": "yfinance",
+    "symbol": "BTC-USD",
+    "bars": 3652,
+    "start": "2016-10-23",
+    "end": "2026-10-23",
+    "fetched_at": "2026-10-23 12:56:08"
+  }
+}
