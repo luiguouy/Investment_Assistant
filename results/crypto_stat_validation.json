@@ -1,0 +1,1431 @@
+{
+  "meta": {
+    "ticker": "BTC-USD",
+    "bars": 3652,
+    "date_range": [
+      "2016-10-23",
+      "2026-10-23"
+    ],
+    "events_mtf": 48,
+    "events_mtf_htf": 30,
+    "n_boot": 10000,
+    "n_trials": 2000,
+    "seed": 20261024
+  },
+  "baseline": {
+    "MTF": {
+      "trades": 13,
+      "win_rate": 0.5384615384615384,
+      "profit_factor": 1.5884521203461865,
+      "avg_r": 0.33781270846533684,
+      "expectancy": 0.048852074424441325,
+      "hold_bars": 53.0,
+      "n_wins": 7,
+      "n_losses": 6,
+      "long_trades": 8,
+      "short_trades": 5
+    },
+    "MTF+HTF": {
+      "trades": 10,
+      "win_rate": 0.4,
+      "profit_factor": 0.6649625662585044,
+      "avg_r": -0.12302114683012977,
+      "expectancy": -0.04372716195590019,
+      "hold_bars": 45.9,
+      "n_wins": 4,
+      "n_losses": 6,
+      "long_trades": 6,
+      "short_trades": 4
+    }
+  },
+  "handoff_aligned": true,
+  "bootstrap": {
+    "MTF": {
+      "n_boot": 10000,
+      "win_rate": {
+        "label": "胜率 vs 50%",
+        "p2_5": 0.3076923076923077,
+        "p50": 0.5384615384615384,
+        "p97_5": 0.7692307692307693,
+        "null_value": 0.5,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "expectancy": {
+        "label": "单笔期望 vs 0",
+        "p2_5": -0.0846525290914821,
+        "p50": 0.0470804857277652,
+        "p97_5": 0.18637381778039938,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "avg_r": {
+        "label": "平均R vs 0",
+        "p2_5": -0.27812333442700055,
+        "p50": 0.3220309657435946,
+        "p97_5": 0.9890066210159186,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "profit_factor": {
+        "label": "盈亏比 PF vs 1.0",
+        "p2_5": 0.3894127189679496,
+        "p50": 1.5802338741056459,
+        "p97_5": 7.463718622177724,
+        "null_value": 1.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "pf_inf_share": 0.0006,
+      "binomial_vs_coinflip": {
+        "wins": 7,
+        "n": 13,
+        "p_value": 1.0
+      }
+    },
+    "MTF+HTF": {
+      "n_boot": 10000,
+      "win_rate": {
+        "label": "胜率 vs 50%",
+        "p2_5": 0.1,
+        "p50": 0.4,
+        "p97_5": 0.7,
+        "null_value": 0.5,
+        "ci_excludes_null": false,
+        "direction": "below"
+      },
+      "expectancy": {
+        "label": "单笔期望 vs 0",
+        "p2_5": -0.17754102312057446,
+        "p50": -0.04553243243343146,
+        "p97_5": 0.10063300672613557,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "below"
+      },
+      "avg_r": {
+        "label": "平均R vs 0",
+        "p2_5": -0.7418716646412349,
+        "p50": -0.14495600919807125,
+        "p97_5": 0.5588866455061068,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "below"
+      },
+      "profit_factor": {
+        "label": "盈亏比 PF vs 1.0",
+        "p2_5": 0.1095611170911427,
+        "p50": 0.6525444085829013,
+        "p97_5": 2.757351713856671,
+        "null_value": 1.0,
+        "ci_excludes_null": false,
+        "direction": "below"
+      },
+      "pf_inf_share": 0.0001,
+      "binomial_vs_coinflip": {
+        "wins": 4,
+        "n": 10,
+        "p_value": 0.75390625
+      }
+    }
+  },
+  "random_control": {
+    "MTF": {
+      "N1_无条件随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "win_rate": {
+            "percentile": 0.5485,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.23076923076923078,
+            "ctrl_p50": 0.46153846153846156,
+            "ctrl_p95": 0.6923076923076923
+          },
+          "expectancy": {
+            "percentile": 0.567,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.0804188982544695,
+            "ctrl_p50": 0.036647962854745315,
+            "ctrl_p95": 0.17023438178288788
+          },
+          "profit_factor": {
+            "percentile": 0.5625,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.3819663379662147,
+            "ctrl_p50": 1.4353562092284247,
+            "ctrl_p95": 4.703452784749298
+          },
+          "avg_r": {
+            "percentile": 0.669,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.33011630586380164,
+            "ctrl_p50": 0.18194505412278858,
+            "ctrl_p95": 0.7614358265490252
+          }
+        }
+      },
+      "N2_门禁匹配随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "win_rate": {
+            "percentile": 0.49,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.3076923076923077,
+            "ctrl_p50": 0.5384615384615384,
+            "ctrl_p95": 0.6923076923076923
+          },
+          "expectancy": {
+            "percentile": 0.4225,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.060315548033834696,
+            "ctrl_p50": 0.06585734766643589,
+            "ctrl_p95": 0.21119955664855874
+          },
+          "profit_factor": {
+            "percentile": 0.4155,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.4849766392521928,
+            "ctrl_p50": 1.8206099705206071,
+            "ctrl_p95": 6.36826932405076
+          },
+          "avg_r": {
+            "percentile": 0.5645,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.24064566600573564,
+            "ctrl_p50": 0.2905068172850456,
+            "ctrl_p95": 0.8829325797526412
+          }
+        }
+      }
+    },
+    "MTF+HTF": {
+      "N1_无条件随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "win_rate": {
+            "percentile": 0.1995,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.2,
+            "ctrl_p50": 0.5,
+            "ctrl_p95": 0.7
+          },
+          "expectancy": {
+            "percentile": 0.1545,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.08980853333919026,
+            "ctrl_p50": 0.03139740085891747,
+            "ctrl_p95": 0.18040901706104515
+          },
+          "profit_factor": {
+            "percentile": 0.18509254627313657,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.30650458933899044,
+            "ctrl_p50": 1.3952838427403795,
+            "ctrl_p95": 5.689191661597817
+          },
+          "avg_r": {
+            "percentile": 0.2095,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.4005766931296259,
+            "ctrl_p50": 0.18116393311962048,
+            "ctrl_p95": 0.8665810891156878
+          }
+        }
+      },
+      "N2_门禁匹配随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "win_rate": {
+            "percentile": 0.193,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.2,
+            "ctrl_p50": 0.5,
+            "ctrl_p95": 0.7
+          },
+          "expectancy": {
+            "percentile": 0.123,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.07878432525928579,
+            "ctrl_p50": 0.05754381385984576,
+            "ctrl_p95": 0.21212201324627342
+          },
+          "profit_factor": {
+            "percentile": 0.144072036018009,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.3639949125950585,
+            "ctrl_p50": 1.7795763275553933,
+            "ctrl_p95": 7.33261625815153
+          },
+          "avg_r": {
+            "percentile": 0.163,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.33082393625229295,
+            "ctrl_p50": 0.28370257986832026,
+            "ctrl_p95": 0.9819921914543106
+          }
+        }
+      }
+    }
+  },
+  "fees": {
+    "MTF": [
+      {
+        "fee_one_side": 0.0,
+        "drag_per_trade": 0.0,
+        "win_rate": 0.5384615384615384,
+        "profit_factor": 1.5884521203461865,
+        "expectancy": 0.048852074424441325
+      },
+      {
+        "fee_one_side": 0.0005,
+        "drag_per_trade": 0.001,
+        "win_rate": 0.5384615384615384,
+        "profit_factor": 1.5732197120098395,
+        "expectancy": 0.047852074424441324
+      },
+      {
+        "fee_one_side": 0.001,
+        "drag_per_trade": 0.002,
+        "win_rate": 0.5384615384615384,
+        "profit_factor": 1.5581548104243443,
+        "expectancy": 0.04685207442444132
+      },
+      {
+        "fee_one_side": 0.002,
+        "drag_per_trade": 0.004,
+        "win_rate": 0.5384615384615384,
+        "profit_factor": 1.528516595558003,
+        "expectancy": 0.04485207442444132
+      }
+    ],
+    "MTF+HTF": [
+      {
+        "fee_one_side": 0.0,
+        "drag_per_trade": 0.0,
+        "win_rate": 0.4,
+        "profit_factor": 0.6649625662585044,
+        "expectancy": -0.04372716195590019
+      },
+      {
+        "fee_one_side": 0.0005,
+        "drag_per_trade": 0.001,
+        "win_rate": 0.4,
+        "profit_factor": 0.6588688160137693,
+        "expectancy": -0.044727161955900194
+      },
+      {
+        "fee_one_side": 0.001,
+        "drag_per_trade": 0.002,
+        "win_rate": 0.4,
+        "profit_factor": 0.6528305836789642,
+        "expectancy": -0.045727161955900195
+      },
+      {
+        "fee_one_side": 0.002,
+        "drag_per_trade": 0.004,
+        "win_rate": 0.4,
+        "profit_factor": 0.6409176653194834,
+        "expectancy": -0.047727161955900196
+      }
+    ]
+  },
+  "sensitivity": {
+    "stop_buffer_k": {
+      "label": "结构止损缓冲 (k×振幅)",
+      "unit": "k",
+      "base": 1.4,
+      "rows": [
+        {
+          "value": 1.0,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.46153846153846156,
+            "profit_factor": 1.3470378386539488,
+            "avg_r": 0.2625424566792395,
+            "expectancy": 0.03219476483126197,
+            "hold_bars": 49.30769230769231,
+            "n_wins": 6,
+            "n_losses": 7,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6920899566307556,
+            "avg_r": -0.1044277732557862,
+            "expectancy": -0.038184114441184115,
+            "hold_bars": 45.8,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.1,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.46153846153846156,
+            "profit_factor": 1.3397510396288166,
+            "avg_r": 0.2578404247591681,
+            "expectancy": 0.031918101031489045,
+            "hold_bars": 49.30769230769231,
+            "n_wins": 6,
+            "n_losses": 7,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6850446941471932,
+            "avg_r": -0.10931312566512905,
+            "expectancy": -0.03956989878057089,
+            "hold_bars": 45.8,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.2,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.46153846153846156,
+            "profit_factor": 1.3326442161172967,
+            "avg_r": 0.2533065791991429,
+            "expectancy": 0.03164142726909942,
+            "hold_bars": 49.30769230769231,
+            "n_wins": 6,
+            "n_losses": 7,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6781794555201303,
+            "avg_r": -0.11403508159076192,
+            "expectancy": -0.04095568311995769,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.3,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5963295654697,
+            "avg_r": 0.3439338720772257,
+            "expectancy": 0.04901158932261286,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.671487867303566,
+            "avg_r": -0.1186016146190771,
+            "expectancy": -0.042341377616513395,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.4,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.5,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5807319335479313,
+            "avg_r": 0.33191644355142336,
+            "expectancy": 0.04869263372850867,
+            "hold_bars": 53.07692307692308,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.658598299883632,
+            "avg_r": -0.1273003392465105,
+            "expectancy": -0.04511284983237645,
+            "hold_bars": 46.1,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.6,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5731613516139353,
+            "avg_r": 0.3262324401979488,
+            "expectancy": 0.04853310713851041,
+            "hold_bars": 53.23076923076923,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6523882981811274,
+            "avg_r": -0.1314460899975563,
+            "expectancy": -0.046498634171763226,
+            "hold_bars": 46.4,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.8,
+          "MTF": {
+            "trades": 14,
+            "win_rate": 0.5714285714285714,
+            "profit_factor": 1.778092864317692,
+            "avg_r": 0.5312000371588674,
+            "expectancy": 0.062377889990235094,
+            "hold_bars": 53.5,
+            "n_wins": 8,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 6
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6404108656590445,
+            "avg_r": -0.13936178936734783,
+            "expectancy": -0.04927010638762624,
+            "hold_bars": 46.4,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        }
+      ]
+    },
+    "buf_2b": {
+      "label": "2B 针尖止损缓冲 (k×振幅)",
+      "unit": "k",
+      "base": 0.35,
+      "rows": [
+        {
+          "value": 0.2,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.25,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.3,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.35,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.4,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.45,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 0.5,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        }
+      ]
+    },
+    "min_rr": {
+      "label": "盈亏比硬闸门",
+      "unit": "R",
+      "base": 2.0,
+      "rows": [
+        {
+          "value": 1.5,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.4974210851307845,
+            "avg_r": 0.28986378392708934,
+            "expectancy": 0.041294866703513136,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6668790098918752,
+            "avg_r": -0.13486168350878108,
+            "expectancy": -0.04347703873772745,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 1.8,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.6178350631389353,
+            "avg_r": 0.34178684552646843,
+            "expectancy": 0.051291385387032484,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 9,
+            "win_rate": 0.4444444444444444,
+            "profit_factor": 0.764385819850703,
+            "avg_r": -0.005401896201238025,
+            "expectancy": -0.03179824695519001,
+            "hold_bars": 50.44444444444444,
+            "n_wins": 4,
+            "n_losses": 5,
+            "long_trades": 5,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 2.0,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 2.2,
+          "MTF": {
+            "trades": 12,
+            "win_rate": 0.5833333333333334,
+            "profit_factor": 2.3706731601698285,
+            "avg_r": 0.46186598017551045,
+            "expectancy": 0.08340320923533195,
+            "hold_bars": 52.75,
+            "n_wins": 7,
+            "n_losses": 5,
+            "long_trades": 7,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 9,
+            "win_rate": 0.4444444444444444,
+            "profit_factor": 0.9210086087463623,
+            "avg_r": -0.014467931144634813,
+            "expectancy": -0.008391429461593417,
+            "hold_bars": 44.77777777777778,
+            "n_wins": 4,
+            "n_losses": 5,
+            "long_trades": 5,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 2.5,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.643638309218588,
+            "avg_r": 0.37249168416196166,
+            "expectancy": 0.05343351735374846,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6892817466464314,
+            "avg_r": -0.09802112483023358,
+            "expectancy": -0.040553162180465764,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 3.0,
+          "MTF": {
+            "trades": 12,
+            "win_rate": 0.5833333333333334,
+            "profit_factor": 2.126863278505144,
+            "avg_r": 0.44154595594640883,
+            "expectancy": 0.07755271198871753,
+            "hold_bars": 52.416666666666664,
+            "n_wins": 7,
+            "n_losses": 5,
+            "long_trades": 8,
+            "short_trades": 4
+          },
+          "MTF+HTF": {
+            "trades": 9,
+            "win_rate": 0.4444444444444444,
+            "profit_factor": 0.8010864586796115,
+            "avg_r": -0.08600574122788125,
+            "expectancy": -0.023245713620061066,
+            "hold_bars": 44.333333333333336,
+            "n_wins": 4,
+            "n_losses": 5,
+            "long_trades": 6,
+            "short_trades": 3
+          }
+        }
+      ]
+    },
+    "max_wait": {
+      "label": "回踩等待根数",
+      "unit": "根",
+      "base": 15,
+      "rows": [
+        {
+          "value": 8,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 10,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 12,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 15,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 20,
+          "MTF": {
+            "trades": 14,
+            "win_rate": 0.5,
+            "profit_factor": 1.3978947894372917,
+            "avg_r": 0.24225465786066994,
+            "expectancy": 0.03485419761455423,
+            "hold_bars": 49.857142857142854,
+            "n_wins": 7,
+            "n_losses": 7,
+            "long_trades": 9,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 11,
+            "win_rate": 0.45454545454545453,
+            "profit_factor": 1.1135841210290753,
+            "avg_r": 0.15069804869353168,
+            "expectancy": 0.013476679308207739,
+            "hold_bars": 47.18181818181818,
+            "n_wins": 5,
+            "n_losses": 6,
+            "long_trades": 7,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 25,
+          "MTF": {
+            "trades": 15,
+            "win_rate": 0.5333333333333333,
+            "profit_factor": 1.5526691978133897,
+            "avg_r": 0.27197811931300575,
+            "expectancy": 0.045184436902075784,
+            "hold_bars": 50.53333333333333,
+            "n_wins": 8,
+            "n_losses": 7,
+            "long_trades": 9,
+            "short_trades": 6
+          },
+          "MTF+HTF": {
+            "trades": 12,
+            "win_rate": 0.5,
+            "profit_factor": 1.2590148121414686,
+            "avg_r": 0.19548209293954635,
+            "expectancy": 0.02817093827647189,
+            "hold_bars": 48.25,
+            "n_wins": 6,
+            "n_losses": 6,
+            "long_trades": 7,
+            "short_trades": 5
+          }
+        }
+      ]
+    },
+    "max_hold": {
+      "label": "最大持仓根数",
+      "unit": "根",
+      "base": 60,
+      "rows": [
+        {
+          "value": 30,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.6153846153846154,
+            "profit_factor": 2.221701623721909,
+            "avg_r": 0.312911214498646,
+            "expectancy": 0.05183596323966934,
+            "hold_bars": 28.923076923076923,
+            "n_wins": 8,
+            "n_losses": 5,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 1.1693240355298056,
+            "avg_r": 0.1004882862968783,
+            "expectancy": 0.012761684441159816,
+            "hold_bars": 26.4,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 40,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.46153846153846156,
+            "profit_factor": 1.9792327878059996,
+            "avg_r": 0.29857751105950314,
+            "expectancy": 0.053408565721903375,
+            "hold_bars": 37.38461538461539,
+            "n_wins": 6,
+            "n_losses": 7,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.3,
+            "profit_factor": 0.8148926516673326,
+            "avg_r": -0.05120809888934756,
+            "expectancy": -0.017935030320259837,
+            "hold_bars": 33.6,
+            "n_wins": 3,
+            "n_losses": 7,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 50,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.806713502245927,
+            "avg_r": 0.3560289530481713,
+            "expectancy": 0.05911899550478101,
+            "hold_bars": 45.61538461538461,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.7412345685622559,
+            "avg_r": -0.09101774606760778,
+            "expectancy": -0.030932216057021723,
+            "hold_bars": 40.3,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 60,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 80,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.891818351566815,
+            "avg_r": 0.4939062622871638,
+            "expectancy": 0.08908823897819634,
+            "hold_bars": 65.38461538461539,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.5385810301913503,
+            "avg_r": -0.20186375900597028,
+            "expectancy": -0.06636527016742955,
+            "hold_bars": 55.4,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 100,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.9664661938228436,
+            "avg_r": 0.5139696323604486,
+            "expectancy": 0.09654518892593865,
+            "hold_bars": 76.15384615384616,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6545486568064066,
+            "avg_r": -0.14312105290860497,
+            "expectancy": -0.04968580232028959,
+            "hold_bars": 63.4,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        }
+      ]
+    },
+    "ema_span": {
+      "label": "趋势门禁 EMA 周期",
+      "unit": "根",
+      "base": 200,
+      "rows": [
+        {
+          "value": 100,
+          "MTF": {
+            "trades": 17,
+            "win_rate": 0.4117647058823529,
+            "profit_factor": 0.9731456175335251,
+            "avg_r": 0.07702618500309576,
+            "expectancy": -0.0027827729709217373,
+            "hold_bars": 50.294117647058826,
+            "n_wins": 7,
+            "n_losses": 10,
+            "long_trades": 9,
+            "short_trades": 8
+          },
+          "MTF+HTF": {
+            "trades": 12,
+            "win_rate": 0.3333333333333333,
+            "profit_factor": 0.5444518321082082,
+            "avg_r": -0.2281558388039743,
+            "expectancy": -0.06085725280764193,
+            "hold_bars": 46.916666666666664,
+            "n_wins": 4,
+            "n_losses": 8,
+            "long_trades": 7,
+            "short_trades": 5
+          }
+        },
+        {
+          "value": 150,
+          "MTF": {
+            "trades": 14,
+            "win_rate": 0.5,
+            "profit_factor": 1.2958048318872857,
+            "avg_r": 0.24225465786066994,
+            "expectancy": 0.027952907803490572,
+            "hold_bars": 50.285714285714285,
+            "n_wins": 7,
+            "n_losses": 7,
+            "long_trades": 8,
+            "short_trades": 6
+          },
+          "MTF+HTF": {
+            "trades": 11,
+            "win_rate": 0.36363636363636365,
+            "profit_factor": 0.6149422417160659,
+            "avg_r": -0.1579881877861538,
+            "expectancy": -0.04968412151382406,
+            "hold_bars": 47.18181818181818,
+            "n_wins": 4,
+            "n_losses": 7,
+            "long_trades": 6,
+            "short_trades": 5
+          }
+        },
+        {
+          "value": 200,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 10,
+            "win_rate": 0.4,
+            "profit_factor": 0.6649625662585044,
+            "avg_r": -0.12302114683012977,
+            "expectancy": -0.04372716195590019,
+            "hold_bars": 45.9,
+            "n_wins": 4,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 4
+          }
+        },
+        {
+          "value": 250,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 9,
+            "win_rate": 0.3333333333333333,
+            "profit_factor": 0.5284190125934715,
+            "avg_r": -0.2261407400784945,
+            "expectancy": -0.06838671389099843,
+            "hold_bars": 44.333333333333336,
+            "n_wins": 3,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 3
+          }
+        },
+        {
+          "value": 300,
+          "MTF": {
+            "trades": 13,
+            "win_rate": 0.5384615384615384,
+            "profit_factor": 1.5884521203461865,
+            "avg_r": 0.33781270846533684,
+            "expectancy": 0.048852074424441325,
+            "hold_bars": 53.0,
+            "n_wins": 7,
+            "n_losses": 6,
+            "long_trades": 8,
+            "short_trades": 5
+          },
+          "MTF+HTF": {
+            "trades": 9,
+            "win_rate": 0.3333333333333333,
+            "profit_factor": 0.5284190125934715,
+            "avg_r": -0.2261407400784945,
+            "expectancy": -0.06838671389099843,
+            "hold_bars": 44.333333333333336,
+            "n_wins": 3,
+            "n_losses": 6,
+            "long_trades": 6,
+            "short_trades": 3
+          }
+        },
+        {
+          "value": "OFF",
+          "MTF": {
+            "trades": 27,
+            "win_rate": 0.4074074074074074,
+            "profit_factor": 0.8447366182504235,
+            "avg_r": 0.061000226964226065,
+            "expectancy": -0.016362637910895643,
+            "hold_bars": 47.666666666666664,
+            "n_wins": 11,
+            "n_losses": 16,
+            "long_trades": 13,
+            "short_trades": 14
+          },
+          "MTF+HTF": {
+            "trades": 13,
+            "win_rate": 0.3076923076923077,
+            "profit_factor": 0.5090626811518522,
+            "avg_r": -0.28752846658828396,
+            "expectancy": -0.06474857020062821,
+            "hold_bars": 43.53846153846154,
+            "n_wins": 4,
+            "n_losses": 9,
+            "long_trades": 7,
+            "short_trades": 6
+          }
+        }
+      ]
+    }
+  }
+}
