@@ -80,7 +80,7 @@ def _prev_week_structure_bias(df: pd.DataFrame) -> np.ndarray:
 def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
                                gate_match: bool, n_trials: int = N_TRIALS,
                                seed: int = RNG_SEED, max_hold: int = 60,
-                               min_rr: float = 2.0) -> dict:
+                               min_rr: float = 2.0, prep_cache: dict = None) -> dict:
     """
     与 validate_crypto_stats.random_entry_control 同构, 三点扩展:
       - 多标的: 每个槽位在自己所属标的的序列上抽随机触发根 (保持标的构成);
@@ -89,9 +89,14 @@ def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
       - 几何池按方向跨标的池化 (止损距离/振幅与 RR 均为无量纲量)。
     gate_match=True 为 N2 门禁匹配对照: 随机触发根须与周线结构偏向同侧
     (与引擎现行周线结构门禁同构, 以已完结周近似)。
+    prep_cache: 跨调用复用逐标的预计算 (opens/振幅/结构偏向等), 多次对照时
+    避免 O(标的数×周数) 的重复预计算; 传入空 dict 即启用缓存。
     """
     prep = {}
     for tk, df in data.items():
+        if prep_cache is not None and tk in prep_cache:
+            prep[tk] = prep_cache[tk]
+            continue
         n = len(df)
         prep[tk] = {
             "df": df,
@@ -104,6 +109,8 @@ def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
             "k_lo": WARMUP,
             "k_hi": n - max_hold - 2,
         }
+        if prep_cache is not None:
+            prep_cache[tk] = prep[tk]
 
     geo = {1: [], -1: []}
     for _, tr in real_trades.iterrows():

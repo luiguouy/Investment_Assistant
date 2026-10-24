@@ -1,0 +1,149 @@
+{
+  "meta": {
+    "n_trials": 800,
+    "seed": 20261025,
+    "note": "多头槽位对照(直接抽样) + 门禁消融 + 费率; 混合口径见主验证日志"
+  },
+  "baseline_mtf": {
+    "all": {
+      "trades": 168,
+      "win_rate": 0.44642857142857145,
+      "profit_factor": 0.9754154925758469,
+      "avg_r": 0.003097428505692094,
+      "expectancy": -0.0015049676829479574,
+      "hold_bars": 49.25595238095238,
+      "n_wins": 75,
+      "n_losses": 93,
+      "long_trades": 97,
+      "short_trades": 71
+    },
+    "long": {
+      "trades": 97,
+      "win_rate": 0.5463917525773195,
+      "profit_factor": 1.8945504092572836,
+      "avg_r": 0.26039335593680607,
+      "expectancy": 0.037630370034441314,
+      "hold_bars": 51.577319587628864,
+      "n_wins": 53,
+      "n_losses": 44,
+      "long_trades": 97,
+      "short_trades": 0
+    }
+  },
+  "N1_long_任意随机": {
+    "n_trials": 800,
+    "verdicts": {
+      "expectancy": {
+        "percentile": 0.085,
+        "verdict": "无显著差异",
+        "ctrl_p5": 0.032019659421215596,
+        "ctrl_p50": 0.05908686249554627,
+        "ctrl_p95": 0.09071714040451809
+      },
+      "win_rate": {
+        "percentile": 0.1175,
+        "verdict": "无显著差异",
+        "ctrl_p5": 0.5257731958762887,
+        "ctrl_p50": 0.5979381443298969,
+        "ctrl_p95": 0.6804123711340206
+      },
+      "profit_factor": {
+        "percentile": 0.10625,
+        "verdict": "无显著差异",
+        "ctrl_p5": 1.6898936755489176,
+        "ctrl_p50": 2.5470019916295836,
+        "ctrl_p95": 4.078779118758226
+      }
+    }
+  },
+  "N2_long_结构匹配随机": {
+    "n_trials": 800,
+    "verdicts": {
+      "expectancy": {
+        "percentile": 0.12,
+        "verdict": "无显著差异",
+        "ctrl_p5": 0.0291965297100778,
+        "ctrl_p50": 0.056121000892951176,
+        "ctrl_p95": 0.08420741406841
+      },
+      "win_rate": {
+        "percentile": 0.14875,
+        "verdict": "无显著差异",
+        "ctrl_p5": 0.5051546391752577,
+        "ctrl_p50": 0.5876288659793815,
+        "ctrl_p95": 0.660309278350515
+      },
+      "profit_factor": {
+        "percentile": 0.1175,
+        "verdict": "无显著差异",
+        "ctrl_p5": 1.6672104533651724,
+        "ctrl_p50": 2.548363832408444,
+        "ctrl_p95": 3.9761084151896697
+      }
+    }
+  },
+  "gate_off_mtf": {
+    "all": {
+      "trades": 356,
+      "win_rate": 0.3848314606741573,
+      "profit_factor": 0.782261318149774,
+      "avg_r": -0.1305300490940832,
+      "expectancy": -0.013402936341012433,
+      "hold_bars": 45.95505617977528,
+      "n_wins": 137,
+      "n_losses": 219,
+      "long_trades": 156,
+      "short_trades": 200
+    },
+    "long": {
+      "trades": 156,
+      "win_rate": 0.5256410256410257,
+      "profit_factor": 1.8345528985653363,
+      "avg_r": 0.2188806665049286,
+      "expectancy": 0.03616194560277332,
+      "hold_bars": 50.23717948717949,
+      "n_wins": 82,
+      "n_losses": 74,
+      "long_trades": 156,
+      "short_trades": 0
+    }
+  },
+  "gate_off_cluster": {
+    "quarters": 25,
+    "unique_entry_dates": 140,
+    "cluster_mean": 0.028555958030126,
+    "cluster_sd": 0.08977890484690189,
+    "cluster_t": 1.5903489844759124,
+    "sig_05": false
+  },
+  "fees_long": [
+    {
+      "fee_one_side": 0.0,
+      "drag_per_trade": 0.0,
+      "win_rate": 0.5463917525773195,
+      "profit_factor": 1.8945504092572836,
+      "expectancy": 0.037630370034441314
+    },
+    {
+      "fee_one_side": 0.0005,
+      "drag_per_trade": 0.001,
+      "win_rate": 0.5463917525773195,
+      "profit_factor": 1.8614887784743257,
+      "expectancy": 0.03663037003444132
+    },
+    {
+      "fee_one_side": 0.001,
+      "drag_per_trade": 0.002,
+      "win_rate": 0.5463917525773195,
+      "profit_factor": 1.8291251147839653,
+      "expectancy": 0.03563037003444132
+    },
+    {
+      "fee_one_side": 0.002,
+      "drag_per_trade": 0.004,
+      "win_rate": 0.5463917525773195,
+      "profit_factor": 1.7664051074253981,
+      "expectancy": 0.03363037003444132
+    }
+  ]
+}
