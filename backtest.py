@@ -298,9 +298,13 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                     entry_p = trig["entry_price"]
                     entry_date = df.index[entry_t]
 
-                    # 黑天鹅事件入场过滤（若开启）：跳过在黑天鹅暴跌窗口内开仓的信号
-                    if exclude_black_swans and sc.is_crypto_black_swan(entry_date):
-                        continue
+                    # 黑天鹅事件入场过滤（若开启）：按标的资产类型选择对应危机窗口字典
+                    # （加密标的走 CRYPTO_BLACK_SWANS，美股/指数标的走 STOCK_BLACK_SWANS）
+                    if exclude_black_swans:
+                        _is_bs = (sc.is_crypto_black_swan if sc.is_crypto_asset(ticker)
+                                  else sl.is_stock_black_swan)
+                        if _is_bs(entry_date):
+                            continue
 
                     stop_p = trig["stop_price"]
                     risk = abs(entry_p - stop_p)
@@ -318,9 +322,12 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                                                      impulse_leg=impulse, min_rr=min_rr)
                     if trade.get("status") == "completed":
                         exit_date = df.index[trade["exit_t"]]
-                        # 黑天鹅持仓过滤（若开启）：跳过在途持仓跨越系统性黑天鹅窗口的受灾交易
-                        if exclude_black_swans and sc.trade_overlaps_black_swan(entry_date, exit_date):
-                            continue
+                        # 黑天鹅持仓过滤（若开启）：跳过在途持仓跨越系统性危机窗口的受灾交易
+                        if exclude_black_swans:
+                            _overlap_bs = (sc.trade_overlaps_black_swan if sc.is_crypto_asset(ticker)
+                                           else sl.trade_overlaps_stock_black_swan)
+                            if _overlap_bs(entry_date, exit_date):
+                                continue
 
                         for h in horizons:
                             s = sl.calc_entry_horizon_stats(df, entry_t, entry_p, side, h)
@@ -350,6 +357,10 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                     risk = abs(entry_p - stop_p)
                     tp_p = round(entry_p + min_rr * risk if side == 1 else entry_p - min_rr * risk, 2)
 
+                    # 黑天鹅事件入场过滤（若开启）：跳过在美股系统性危机窗口内开仓的信号
+                    if exclude_black_swans and sl.is_stock_black_swan(df.index[entry_t]):
+                        continue
+
                     # 构造大盘历史切片（严格 <= entry_t 所在日期，杜绝未来函数）
                     m_dow = None
                     if use_market_gate and market_data:
@@ -375,6 +386,10 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                     trade = sl.simulate_strategy_trade(df, entry_t, entry_p, side, stop_p, tp_p,
                                                        min_rr=min_rr, market_dow=m_dow, wave_status=w_status)
                     if trade.get("status") == "completed":
+                        # 黑天鹅持仓过滤（若开启）：跳过在途持仓跨越美股系统性危机窗口的受灾交易
+                        if exclude_black_swans and sl.trade_overlaps_stock_black_swan(
+                                df.index[entry_t], df.index[trade["exit_t"]]):
+                            continue
                         for h in horizons:
                             s = sl.calc_entry_horizon_stats(df, entry_t, entry_p, side, h)
                             if s is None:
@@ -845,6 +860,13 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
         if not events:
             continue
 
+        # 黑天鹅事件过滤（美股标的）：剔除决策根落在系统性危机窗口内的事件，
+        # 保证横向对比中所有模式（含基线）使用一致的危机剔除口径
+        if exclude_black_swans and not sc.is_crypto_asset(tk):
+            events = [e for e in events if not sl.is_stock_black_swan(e["date"])]
+            if not events:
+                continue
+
         fwd = Forward(df)
         for arm in ("MTF", "MTF+HTF"):
             arm_events = [e for e in events if e["arm"] == arm]
@@ -876,7 +898,8 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
                         stats[arm][m_key]["records"].append(rec)
                 elif m_key == "strategy":
                     rec = build_records(fwd, arm_events, df=df, entry_mode="strategy", retest_level="swing",
-                                        min_rr=min_rr, volume_filter=volume_filter, asset_type="stock", ticker=tk)
+                                        min_rr=min_rr, volume_filter=volume_filter, asset_type="stock", ticker=tk,
+                                        exclude_black_swans=exclude_black_swans)
                     if not rec.empty:
                         stats[arm][m_key]["filled"] += rec["date"].nunique()
                         stats[arm][m_key]["records"].append(rec)
@@ -884,7 +907,8 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
                 elif m_key == "strategy_dow_wave":
                     rec = build_records(fwd, arm_events, df=df, entry_mode="strategy", retest_level="swing",
                                         min_rr=min_rr, volume_filter=True, market_data=market_data,
-                                        use_market_gate=True, use_wave_filter=True, asset_type="stock", ticker=tk)
+                                        use_market_gate=True, use_wave_filter=True, asset_type="stock", ticker=tk,
+                                        exclude_black_swans=exclude_black_swans)
                     if not rec.empty:
                         stats[arm][m_key]["filled"] += rec["date"].nunique()
                         stats[arm][m_key]["records"].append(rec)

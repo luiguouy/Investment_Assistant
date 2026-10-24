@@ -1,0 +1,273 @@
+{
+  "meta": {
+    "tickers": [
+      "SPY",
+      "QQQ"
+    ],
+    "n_boot": 10000,
+    "n_trials": 2000,
+    "seed": 20261024,
+    "black_swan_windows": [
+      "2008 全球金融危机 (雷曼崩溃与 GFC) [2008-09-01~2009-03-31]",
+      "2011 美债降级与欧债危机 [2011-08-01~2011-10-31]",
+      "2015-16 中国熔断与全球闪崩回调 [2015-08-01~2016-02-29]",
+      "2018 Q4 加息恐慌滚动暴跌 [2018-10-01~2018-12-31]",
+      "2020 新冠疫情熔断危机 [2020-02-19~2020-04-30]",
+      "2022 加息周期熊市 [2022-01-01~2022-10-31]"
+    ]
+  },
+  "baseline": {
+    "MTF_crypto": {
+      "trades": 17,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.4968936461545417,
+      "avg_r": 0.3590767878261361,
+      "expectancy": 0.013579651685977882,
+      "hold_bars": 51.294117647058826,
+      "n_wins": 10,
+      "n_losses": 7,
+      "long_trades": 12,
+      "short_trades": 5
+    },
+    "MTF_stock": {
+      "trades": 52,
+      "win_rate": 0.34615384615384615,
+      "profit_factor": 0.9114415129296702,
+      "avg_r": 0.06013943743587205,
+      "expectancy": -0.0014937713942610026,
+      "hold_bars": 11.153846153846153,
+      "n_wins": 18,
+      "n_losses": 34,
+      "long_trades": 12,
+      "short_trades": 40
+    },
+    "MTF+HTF_crypto": {
+      "trades": 15,
+      "win_rate": 0.6,
+      "profit_factor": 1.416674719679536,
+      "avg_r": 0.3582996375037522,
+      "expectancy": 0.011980984061098265,
+      "hold_bars": 46.666666666666664,
+      "n_wins": 9,
+      "n_losses": 6,
+      "long_trades": 11,
+      "short_trades": 4
+    },
+    "MTF+HTF_stock": {
+      "trades": 17,
+      "win_rate": 0.35294117647058826,
+      "profit_factor": 0.7221912963596951,
+      "avg_r": 0.050098921730783716,
+      "expectancy": -0.004840071761894375,
+      "hold_bars": 13.882352941176471,
+      "n_wins": 6,
+      "n_losses": 11,
+      "long_trades": 11,
+      "short_trades": 6
+    }
+  },
+  "bootstrap_crypto_mtf": {
+    "全部": {
+      "n_boot": 10000,
+      "win_rate": {
+        "label": "胜率 vs 50%",
+        "p2_5": 0.35294117647058826,
+        "p50": 0.5882352941176471,
+        "p97_5": 0.8235294117647058,
+        "null_value": 0.5,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "expectancy": {
+        "label": "单笔期望 vs 0",
+        "p2_5": -0.024121912018321243,
+        "p50": 0.013411889067500342,
+        "p97_5": 0.050877005247078555,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "avg_r": {
+        "label": "平均R vs 0",
+        "p2_5": -0.19090009720692525,
+        "p50": 0.35663622717954413,
+        "p97_5": 0.9208936423409028,
+        "null_value": 0.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "profit_factor": {
+        "label": "盈亏比 PF vs 1.0",
+        "p2_5": 0.46595655422001775,
+        "p50": 1.5019355225633668,
+        "p97_5": 5.560506849347349,
+        "null_value": 1.0,
+        "ci_excludes_null": false,
+        "direction": "above"
+      },
+      "pf_inf_share": 0.0001,
+      "binomial_vs_coinflip": {
+        "wins": 10,
+        "n": 17,
+        "p_value": 0.629058837890625
+      }
+    },
+    "仅多头": {
+      "n_boot": 10000,
+      "win_rate": {
+        "label": "胜率 vs 50%",
+        "p2_5": 0.5833333333333334,
+        "p50": 0.8333333333333334,
+        "p97_5": 1.0,
+        "null_value": 0.5,
+        "ci_excludes_null": true,
+        "direction": "above"
+      },
+      "expectancy": {
+        "label": "单笔期望 vs 0",
+        "p2_5": 0.025479149417732584,
+        "p50": 0.053773325256528504,
+        "p97_5": 0.08754198728077026,
+        "null_value": 0.0,
+        "ci_excludes_null": true,
+        "direction": "above"
+      },
+      "avg_r": {
+        "label": "平均R vs 0",
+        "p2_5": 0.32484230353130467,
+        "p50": 0.8824127704322821,
+        "p97_5": 1.4364141638581918,
+        "null_value": 0.0,
+        "ci_excludes_null": true,
+        "direction": "above"
+      },
+      "profit_factor": {
+        "label": "盈亏比 PF vs 1.0",
+        "p2_5": 4.265201188122307,
+        "p50": 17.16746139960182,
+        "p97_5": 100.15381668414368,
+        "null_value": 1.0,
+        "ci_excludes_null": true,
+        "direction": "above"
+      },
+      "pf_inf_share": 0.1078,
+      "binomial_vs_coinflip": {
+        "wins": 10,
+        "n": 12,
+        "p_value": 0.03857421875
+      }
+    }
+  },
+  "random_control": {
+    "MTF": {
+      "N1_无条件随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "expectancy": {
+            "percentile": 0.431,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.006766983261142762,
+            "ctrl_p50": 0.015708269162526198,
+            "ctrl_p95": 0.03830293099986878
+          },
+          "profit_factor": {
+            "percentile": 0.367,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.7755025081812954,
+            "ctrl_p50": 1.7525925099056758,
+            "ctrl_p95": 4.039345642471541
+          },
+          "win_rate": {
+            "percentile": 0.523,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.35294117647058826,
+            "ctrl_p50": 0.5294117647058824,
+            "ctrl_p95": 0.7058823529411765
+          }
+        }
+      },
+      "N2_门禁匹配随机": {
+        "n_trials": 2000,
+        "verdicts": {
+          "expectancy": {
+            "percentile": 0.848,
+            "verdict": "无显著差异",
+            "ctrl_p5": -0.021569489742293082,
+            "ctrl_p50": 5.309138091370765e-06,
+            "ctrl_p95": 0.02084386579282601
+          },
+          "profit_factor": {
+            "percentile": 0.8455,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.4810866206245902,
+            "ctrl_p50": 1.0001512506624666,
+            "ctrl_p95": 1.8650333321167964
+          },
+          "win_rate": {
+            "percentile": 0.675,
+            "verdict": "无显著差异",
+            "ctrl_p5": 0.35294117647058826,
+            "ctrl_p50": 0.5294117647058824,
+            "ctrl_p95": 0.6470588235294118
+          }
+        }
+      }
+    }
+  },
+  "trend_gate_ablation": {
+    "门禁开启(基线)": {
+      "trades": 17,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.4968936461545417,
+      "avg_r": 0.3590767878261361,
+      "expectancy": 0.013579651685977882,
+      "hold_bars": 51.294117647058826,
+      "n_wins": 10,
+      "n_losses": 7,
+      "long_trades": 12,
+      "short_trades": 5
+    },
+    "门禁关闭": {
+      "trades": 52,
+      "win_rate": 0.3076923076923077,
+      "profit_factor": 0.4904742320869725,
+      "avg_r": -0.27862993446914747,
+      "expectancy": -0.020015854016185407,
+      "hold_bars": 41.46153846153846,
+      "n_wins": 16,
+      "n_losses": 36,
+      "long_trades": 12,
+      "short_trades": 40
+    }
+  },
+  "fees_crypto_mtf": [
+    {
+      "fee_one_side": 0.0,
+      "drag_per_trade": 0.0,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.4968936461545417,
+      "expectancy": 0.013579651685977882
+    },
+    {
+      "fee_one_side": 0.0005,
+      "drag_per_trade": 0.001,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.4534702104210508,
+      "expectancy": 0.012579651685977881
+    },
+    {
+      "fee_one_side": 0.001,
+      "drag_per_trade": 0.002,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.4113170108478317,
+      "expectancy": 0.01157965168597788
+    },
+    {
+      "fee_one_side": 0.002,
+      "drag_per_trade": 0.004,
+      "win_rate": 0.5882352941176471,
+      "profit_factor": 1.3306047123492213,
+      "expectancy": 0.009579651685977878
+    }
+  ]
+}

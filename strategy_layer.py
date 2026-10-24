@@ -26,6 +26,85 @@ DEFAULT_MAX_WAIT_BARS = 15
 DEFAULT_MIN_RR = 2.0
 DEFAULT_MAX_HOLD_BARS = 40
 
+# 美股重大系统性危机窗口（黑天鹅极端行情，供 --exclude-black-swans 全流程剔除）
+# 窗口与 docs/backtest_result_v1.md 记录的历史危机覆盖期一致，取急性发作段边界
+STOCK_BLACK_SWANS = [
+    {
+        "name": "2008 全球金融危机 (雷曼崩溃与 GFC)",
+        "start": "2008-09-01",
+        "end": "2009-03-31",
+        "description": "系统性银行危机，指数自高点腰斩，流动性枯竭"
+    },
+    {
+        "name": "2011 美债降级与欧债危机",
+        "start": "2011-08-01",
+        "end": "2011-10-31",
+        "description": "标普下调美国主权评级，两周内近 20% 暴跌"
+    },
+    {
+        "name": "2015-16 中国熔断与全球闪崩回调",
+        "start": "2015-08-01",
+        "end": "2016-02-29",
+        "description": "8·24 美股闪崩 + 2016 年初连环暴跌"
+    },
+    {
+        "name": "2018 Q4 加息恐慌滚动暴跌",
+        "start": "2018-10-01",
+        "end": "2018-12-31",
+        "description": "鹰派加息预期引发四季度近 20% 滚动杀跌"
+    },
+    {
+        "name": "2020 新冠疫情熔断危机",
+        "start": "2020-02-19",
+        "end": "2020-04-30",
+        "description": "五周 34% 暴跌，十日内四次熔断，流动性挤兑"
+    },
+    {
+        "name": "2022 加息周期熊市",
+        "start": "2022-01-01",
+        "end": "2022-10-31",
+        "description": "激进加息压缩估值，指数近 25% 熊市至 10 月触底"
+    }
+]
+
+
+def is_stock_black_swan(date_val) -> bool:
+    """
+    检查指定日期是否落在美股重大系统性危机窗口内。
+    """
+    if date_val is None:
+        return False
+    try:
+        d = pd.to_datetime(date_val)
+        d = d.tz_localize(None) if hasattr(d, 'tz_localize') and d.tz is not None else d
+    except Exception:
+        return False
+    for bs in STOCK_BLACK_SWANS:
+        s = pd.to_datetime(bs["start"])
+        e = pd.to_datetime(bs["end"])
+        if s <= d <= e:
+            return True
+    return False
+
+
+def trade_overlaps_stock_black_swan(entry_date, exit_date) -> bool:
+    """
+    检查交易生命周期 [entry_date, exit_date] 是否与美股系统性危机窗口重叠。
+    """
+    try:
+        e_d = pd.to_datetime(entry_date)
+        e_d = e_d.tz_localize(None) if hasattr(e_d, 'tz_localize') and e_d.tz is not None else e_d
+        x_d = pd.to_datetime(exit_date)
+        x_d = x_d.tz_localize(None) if hasattr(x_d, 'tz_localize') and x_d.tz is not None else x_d
+    except Exception:
+        return False
+    for bs in STOCK_BLACK_SWANS:
+        s = pd.to_datetime(bs["start"])
+        e = pd.to_datetime(bs["end"])
+        if not (x_d < s or e_d > e):
+            return True
+    return False
+
 
 # ==============================================================================
 # 1. 结构位与斐波那契回撤提取 (Location Layer)
