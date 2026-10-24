@@ -489,7 +489,7 @@ def simulate_crypto_trade(df: pd.DataFrame, entry_t: int, entry_price: float,
       - 分级止盈阶梯：
         * TP1 (50% 仓位): 达到时兑现 50%，并将剩余仓位止损推至保本价 (Break-Even Stop: entry_price)；
         * TP2 (25% 仓位): 达到 1.618 扩展位时兑现 25%，剩余 25% Runner 止损提至 TP1 锁定利润；
-        * Runner (25% 仓位): 移动均线跟踪止损或满期平仓，捕捉大牛市主升浪；
+        * Runner (25% 仓位): 近 10 根最低价/最高价追踪止损（纯价格极值，非均线）或满期平仓，捕捉大牛市主升浪；
       - 保守撮合原则：
         同根 K 线内若同时触及当期止损与止盈，严格判定为止损优先出场。
     """
