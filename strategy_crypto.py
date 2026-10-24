@@ -34,7 +34,6 @@ CRYPTO_2B_STOP_BUFFER_K = 0.35   # 2B 扫损极值针尖外缓冲 (0.3 ~ 0.5x AT
 CRYPTO_MIN_RR = 2.0             # 最小风险报酬比硬闸门
 CRYPTO_MAX_WAIT_BARS = 15       # 突破后最大等待回踩触发根数
 CRYPTO_MAX_HOLD_BARS = 60       # 最大持仓跟踪周期 (加密顺势主升波段较长)
-CRYPTO_TREND_EMA_SPAN = 200     # 道氏大周期主趋势 EMA 周期 (日线 200 EMA 锚定原生牛熊)
 
 # 分级止盈比例配置
 CRYPTO_TP1_RATIO = 0.50         # TP1 减半比例 (50%)
@@ -354,41 +353,53 @@ def detect_crypto_trigger_on_bar(df: pd.DataFrame, k: int, side: int,
 
 
 # ==============================================================================
-# 2.5 道氏长周期主趋势顺势门禁 (Dow Primary Trend Gate: 200 EMA)
+# 2.5 周线结构顺势门禁 (HTF Structure Trend Gate — 纯价格结构, 零滞后指标)
 # ==============================================================================
 
-def check_crypto_primary_trend(df: pd.DataFrame, t: int, side: int,
-                               span: int = CRYPTO_TREND_EMA_SPAN) -> dict:
+def _weekly_prefix(df: pd.DataFrame, t: int) -> pd.DataFrame:
+    """将 <= t 的日线切片聚合为周线 (W-FRI, 与 backtest.weekly_from_daily 同口径)。"""
+    sub = df.iloc[:t + 1]
+    agg_map = {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+    if "Volume" in sub.columns:
+        agg_map["Volume"] = "sum"
+    w = sub.resample("W-FRI").agg(agg_map)
+    return w.dropna(subset=["Open", "High", "Low", "Close"])
+
+
+def check_crypto_primary_trend(df: pd.DataFrame, t: int, side: int) -> dict:
     """
-    道氏大周期主趋势顺势门禁 (Dow Primary Trend Gate):
-      - 针对加密资产世俗大牛市背景与极端轧空风险，使用日线 200 EMA 锚定主牛熊周期；
-      - 严格只使用 <= t 的收盘价序列（零未来函数），采用 adjust=False 纯因果递推；
-      - 多头 (side == 1): 收盘价必须处于 200 EMA 之上 (主牛市顺势做多，杜绝熊市盲目抄底接飞刀)；
-      - 空头 (side == -1): 收盘价必须处于 200 EMA 之下 (主熊市顺势做空，严防牛市逆势短空被疯狂轧空爆头)；
-      - 若历史数据不足 50 根（如单元测试小样本），自动放行避免阻塞测试。
+    周线结构顺势门禁 (Higher-Timeframe Structure Trend Gate):
+      - 裸K流派边界: 趋势由结构定义 (HH/HL vs LH/LL), 禁用 MA/EMA 等滞后方向指标
+        (docs/pa_engine_audit_2026-10-22.md 方向性指标禁令; 替换消融证据见
+        docs/index_stat_validation.md 附录);
+      - 由 <= t 的日线切片聚合周线, 提取周线摆动结构 (order=3), 以道氏 MSS 偏向
+        (pe.dow_bias) 判定高周期结构方向, 严格零未来函数;
+      - 多头 (side == 1): 周线结构偏向须为 +1 (高周期上升结构);
+      - 空头 (side == -1): 周线结构偏向须为 -1 (高周期下降结构);
+      - 历史不足 50 根日线 (单元测试小样本) 自动放行。
+      2026-10-24 消融 (SPY/QQQ, 剔除黑天鹅): 与原 200 EMA 门禁过滤效果几乎等价
+      (16 vs 17 笔, PF 1.41 vs 1.50, 期望 +1.12% vs +1.36%), 且多头交易集在
+      无门禁/EMA门禁/结构门禁下逐笔相同——EMA 对多头从不拦截, 其职能可被
+      周线结构完全接管, 无需保留任何滞后指标。
     """
     if df is None or len(df) < 50 or t < 0 or t >= len(df):
-        return {"aligned": True, "ema": None, "reason": "insufficient_history_neutral"}
+        return {"aligned": True, "structure_bias": None, "reason": "insufficient_history_neutral"}
 
-    # 严格 <= t 的历史切片
-    close_series = df["Close"].iloc[:t + 1]
-    ema_series = close_series.ewm(span=span, adjust=False).mean()
-    ema_val = float(ema_series.iloc[-1])
-    curr_c = float(close_series.iloc[-1])
+    weekly = _weekly_prefix(df, t)
+    if weekly.empty:
+        return {"aligned": True, "structure_bias": None, "reason": "insufficient_history_neutral"}
+
+    w_swings = pe.extract_swings(weekly, order=3)
+    bias = pe.dow_bias(w_swings, df=weekly, buffer_k=0.0)
 
     if side == 1:
-        aligned = bool(curr_c >= ema_val)
-        reason = "bull_market_long_ok" if aligned else "counter_trend_bear_long_blocked"
+        aligned = bool(bias == 1)
+        reason = "bull_structure_long_ok" if aligned else "counter_structure_long_blocked"
     else:
-        aligned = bool(curr_c <= ema_val)
-        reason = "bear_market_short_ok" if aligned else "counter_trend_bull_short_blocked"
+        aligned = bool(bias == -1)
+        reason = "bear_structure_short_ok" if aligned else "counter_structure_short_blocked"
 
-    return {
-        "aligned": aligned,
-        "ema": round(ema_val, 2),
-        "curr_close": round(curr_c, 2),
-        "reason": reason
-    }
+    return {"aligned": aligned, "structure_bias": int(bias), "reason": reason}
 
 
 def simulate_crypto_trigger_entry(df: pd.DataFrame, t: int, side: int,
@@ -402,7 +413,7 @@ def simulate_crypto_trigger_entry(df: pd.DataFrame, t: int, side: int,
       - 从 t+1 开始扫描至 t+max_wait_bars 根；
       - 若 k 根收盘确认形态，k+1 根开盘执行入场（严格零未来函数）；
       - 若价格击穿大结构止损 structural_stop，提前终止失效；
-      - 内置道氏 200 EMA 大趋势门禁与空头非对称过滤（剔除空头吞没滞后追跌陷阱）。
+      - 内置周线结构顺势门禁与空头非对称过滤（剔除空头吞没滞后追跌陷阱）。
     """
     n = len(df)
     if t >= n - 2 or key_level <= 0 or bar_rng <= 0:
@@ -423,7 +434,7 @@ def simulate_crypto_trigger_entry(df: pd.DataFrame, t: int, side: int,
             if side == -1 and disallow_short_engulfing and trig.get("pattern") == "engulfing":
                 continue
 
-            # 2. 道氏 200 EMA 大周期主趋势顺势门禁
+            # 2. 周线结构顺势门禁 (HTF Structure Gate, 纯价格结构零滞后指标)
             if use_trend_gate:
                 trend_chk = check_crypto_primary_trend(df, k, side)
                 if not trend_chk.get("aligned", True):

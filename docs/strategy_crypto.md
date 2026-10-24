@@ -1,5 +1,14 @@
 # 比特币与加密资产专用量化策略报告（Crypto Native Strategy Engine）
 
+> **⚠️ 2026-10-24 修订**: 本报告中所有「道氏 200 EMA 大周期主趋势顺势门禁」的描述已过时。
+> 按裸K流派边界决议(禁用 MA/EMA 等滞后方向指标, 见 `docs/pa_engine_audit_2026-10-22.md` 的
+> 方向性指标禁令), 引擎中的 200 EMA 门禁已被**周线结构顺势门禁**完全替代
+> (`check_crypto_primary_trend`: <=t 日线聚合周线 → order=3 摆动结构 → MSS 偏向判定)。
+> 替换依据的消融证据见 `docs/index_stat_validation.md` 附录: SPY/QQQ 上两种门禁过滤效果
+> 几乎等价(16 vs 17 笔, PF 1.41 vs 1.50), 且多头交易集在 EMA/无门禁/结构门禁下逐笔相同
+> ——EMA 从不拦截多头, 其职能可被纯价格结构完全接管。本文其余章节保留作历史记录,
+> 其中引用的 BTC 回测数字(基于 EMA 门禁)不再代表引擎现行行为。
+
 - **所属模块**：`strategy_crypto.py`、`backtest.py`（v4.0 资产自适应）、`tests/test_strategy_crypto.py`
 - **理论依据**：价格行为学流动性猎杀 (SMC Liquidity Sweep) + 宽幅波动率脱敏 + 斐波那契顺势扩展 + 非对称分级止盈
 - **数据样本**：BTC-USD 历史全周期 3,652 根日线（2016-10 → 2026-10）

@@ -52,16 +52,43 @@ JSON_OUT = os.path.join("..", "results", "index_stat_validation.json")
 # 多标的随机入场对照 (黑天鹅感知 + 逐笔标的/方向匹配 + 管理机制一致)
 # ==============================================================================
 
+def _prev_week_structure_bias(df: pd.DataFrame) -> np.ndarray:
+    """
+    预计算每根日线的「上一个已完结周」结构偏向 (order=3 周线摆动 + pe.dow_bias MSS)。
+    与引擎门禁 (check_crypto_primary_trend, 含当周部分数据) 的差异: 此处只用已完结周,
+    略偏保守但零未来函数, 作为 N2 随机对照的匹配近似。
+    返回与 df 等长的偏向数组 (+1/-1/0, 0=结构中性)。
+    """
+    weekly = bt.weekly_from_daily(df)
+    week_bias = []
+    for i in range(len(weekly)):
+        wsub = weekly.iloc[:i + 1]
+        sw = pe.extract_swings(wsub, order=3)
+        week_bias.append(pe.dow_bias(sw, df=wsub, buffer_k=0.0))
+    week_bias = np.array(week_bias, dtype=int) if week_bias else np.array([], dtype=int)
+
+    dates = df.index
+    week_starts = pd.DatetimeIndex([d - pd.Timedelta(days=d.weekday()) for d in dates])
+    out = np.zeros(len(df), dtype=int)
+    for i, ws in enumerate(week_starts):
+        pos = weekly.index.searchsorted(ws, side="left")
+        if pos > 0:
+            out[i] = week_bias[pos - 1]   # 上一个已完结周 (label < 本周周一)
+    return out
+
+
 def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
                                gate_match: bool, n_trials: int = N_TRIALS,
                                seed: int = RNG_SEED, max_hold: int = 60,
-                               min_rr: float = 2.0, ema_span: int = 200) -> dict:
+                               min_rr: float = 2.0) -> dict:
     """
     与 validate_crypto_stats.random_entry_control 同构, 三点扩展:
       - 多标的: 每个槽位在自己所属标的的序列上抽随机触发根 (保持标的构成);
       - 黑天鹅感知: 入场日落在美股危机窗口内、或持仓跨越窗口的抽样直接作废重抽
         (与被检验策略的剔除口径完全一致);
       - 几何池按方向跨标的池化 (止损距离/振幅与 RR 均为无量纲量)。
+    gate_match=True 为 N2 门禁匹配对照: 随机触发根须与周线结构偏向同侧
+    (与引擎现行周线结构门禁同构, 以已完结周近似)。
     """
     prep = {}
     for tk, df in data.items():
@@ -71,7 +98,7 @@ def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
             "n": n,
             "opens": df["Open"].to_numpy(dtype=float),
             "closes": df["Close"].to_numpy(dtype=float),
-            "ema": df["Close"].ewm(span=ema_span, adjust=False).mean().to_numpy(dtype=float),
+            "struct_bias": _prev_week_structure_bias(df),
             "bar_rng": pd.Series(df["High"] - df["Low"]).rolling(14).median().to_numpy(dtype=float),
             "dates": df.index,
             "k_lo": WARMUP,
@@ -102,9 +129,9 @@ def random_entry_control_multi(data: dict, real_trades: pd.DataFrame,
             for _attempt in range(80):
                 k = int(rng.integers(p["k_lo"], p["k_hi"] + 1))
                 if gate_match:
-                    if side == 1 and p["closes"][k] < p["ema"][k]:
+                    if side == 1 and p["struct_bias"][k] != 1:
                         continue
-                    if side == -1 and p["closes"][k] > p["ema"][k]:
+                    if side == -1 and p["struct_bias"][k] != -1:
                         continue
                 entry_t = k + 1
                 entry_date = p["dates"][entry_t]

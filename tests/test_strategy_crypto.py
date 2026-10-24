@@ -350,35 +350,43 @@ class TestStrategyCrypto(unittest.TestCase):
         self.assertFalse(sc.trade_overlaps_black_swan("2020-04-01", "2020-05-01"))
 
     def test_check_crypto_primary_trend(self):
-        """测试道氏 200 EMA 大周期主趋势门禁"""
-        idx = pd.bdate_range("2025-01-01", periods=250)
-        # 上升趋势：从 10000 涨到 30000，当前价格 30000 远高于 200 EMA
-        c_up = np.linspace(10000.0, 30000.0, 250)
-        df_bull = pd.DataFrame({"Open": c_up, "High": c_up + 100, "Low": c_up - 100, "Close": c_up}, index=idx)
+        """测试周线结构顺势门禁 (纯价格结构, 零滞后指标)"""
+        # 震荡趋势夹具: 15 根顺趋势日 + 10 根回调日, 回调深度足以在周线上形成
+        # 可确认的摆动高低点 (阶梯太平会导致无摆动高点, 结构偏向恒为 0)
+        idx = pd.bdate_range("2025-01-01", periods=260)
 
-        # 牛市中：多头放行，空头严格拦截驳回
-        chk_bull_long = sc.check_crypto_primary_trend(df_bull, 240, side=1)
+        def make_fixture(trend_day, pullback_day):
+            closes, c = [], 10000.0
+            for i in range(260):
+                c += trend_day if (i % 25) < 15 else pullback_day
+                closes.append(c)
+            closes = np.array(closes)
+            return pd.DataFrame({"Open": closes, "High": closes + 50,
+                                 "Low": closes - 50, "Close": closes}, index=idx)
+
+        # 上升趋势: 周线结构偏向 +1
+        df_bull = make_fixture(+400.0, -350.0)
+        chk_bull_long = sc.check_crypto_primary_trend(df_bull, 250, side=1)
         self.assertTrue(chk_bull_long["aligned"])
-        self.assertEqual(chk_bull_long["reason"], "bull_market_long_ok")
+        self.assertEqual(chk_bull_long["reason"], "bull_structure_long_ok")
+        self.assertEqual(chk_bull_long["structure_bias"], 1)
 
-        chk_bull_short = sc.check_crypto_primary_trend(df_bull, 240, side=-1)
+        chk_bull_short = sc.check_crypto_primary_trend(df_bull, 250, side=-1)
         self.assertFalse(chk_bull_short["aligned"])
-        self.assertEqual(chk_bull_short["reason"], "counter_trend_bull_short_blocked")
+        self.assertEqual(chk_bull_short["reason"], "counter_structure_short_blocked")
 
-        # 下降趋势：从 30000 跌到 10000，当前价格 10000 远低于 200 EMA
-        c_down = np.linspace(30000.0, 10000.0, 250)
-        df_bear = pd.DataFrame({"Open": c_down, "High": c_down + 100, "Low": c_down - 100, "Close": c_down}, index=idx)
-
-        # 熊市中：多头拦截抄底，空头放行
-        chk_bear_long = sc.check_crypto_primary_trend(df_bear, 240, side=1)
+        # 下降趋势: 周线结构偏向 -1
+        df_bear = make_fixture(-400.0, +350.0)
+        chk_bear_long = sc.check_crypto_primary_trend(df_bear, 250, side=1)
         self.assertFalse(chk_bear_long["aligned"])
-        self.assertEqual(chk_bear_long["reason"], "counter_trend_bear_long_blocked")
+        self.assertEqual(chk_bear_long["reason"], "counter_structure_long_blocked")
 
-        chk_bear_short = sc.check_crypto_primary_trend(df_bear, 240, side=-1)
+        chk_bear_short = sc.check_crypto_primary_trend(df_bear, 250, side=-1)
         self.assertTrue(chk_bear_short["aligned"])
-        self.assertEqual(chk_bear_short["reason"], "bear_market_short_ok")
+        self.assertEqual(chk_bear_short["reason"], "bear_structure_short_ok")
+        self.assertEqual(chk_bear_short["structure_bias"], -1)
 
-        # 小样本历史不足 50 根：自动放行不阻塞
+        # 小样本历史不足 50 根: 自动放行不阻塞
         df_small = df_bull.iloc[:30]
         chk_small = sc.check_crypto_primary_trend(df_small, 20, side=1)
         self.assertTrue(chk_small["aligned"])

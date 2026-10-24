@@ -777,15 +777,20 @@ def verify(n: int = 700, method: str = "h2", buffer_k: float = 0.0) -> int:
 
     print("\n[T11-Crypto] 加密专用策略未来函数与分级止盈自检：截断重算，触发入场与出场完全一致")
     full_cr = build_records(fwd, full, df=df, entry_mode="strategy_crypto", asset_type="crypto")
+
+    def _cr_rows(rec_cr, t_cap):
+        if rec_cr is None or rec_cr.empty or "horizon" not in rec_cr.columns:
+            return []
+        return [(r["t"], r["arm"], r["side"], round(r["entry_price"], 2), round(r["exit_price"], 2))
+                for _, r in rec_cr[rec_cr["horizon"] == 5].iterrows() if r["t"] <= t_cap]
+
     for T in (350, 500):
         sub_df_t = df.iloc[:T + 1]
         part_events = enumerate_events(sub_df_t, weekly_from_daily(sub_df_t), method=method, buffer_k=buffer_k)
         fwd_part = Forward(sub_df_t)
         part_cr = build_records(fwd_part, part_events, df=sub_df_t, entry_mode="strategy_crypto", asset_type="crypto")
-        a_cr = [(r["t"], r["arm"], r["side"], round(r["entry_price"], 2), round(r["exit_price"], 2))
-                for _, r in full_cr[full_cr["horizon"] == 5].iterrows() if r["t"] <= T - 50]
-        b_cr = [(r["t"], r["arm"], r["side"], round(r["entry_price"], 2), round(r["exit_price"], 2))
-                for _, r in part_cr[part_cr["horizon"] == 5].iterrows() if r["t"] <= T - 50]
+        a_cr = _cr_rows(full_cr, T - 50)
+        b_cr = _cr_rows(part_cr, T - 50)
         chk(f"截至 t={T - 50} 的加密专用闭环交易集完全一致", a_cr == b_cr, f"{len(a_cr)} 个 vs {len(b_cr)} 个")
 
     print("\n" + ("✅ 自检通过" if not fails else f"❌ {len(fails)} 项失败"))
@@ -1117,7 +1122,7 @@ def main() -> int:
     ap.add_argument("--exclude-black-swans", action="store_true",
                     help="剔除加密货币历史重大系统性黑天鹅崩盘期（312、519、Luna、FTX等全网清算挤兑）")
     ap.add_argument("--no-crypto-trend-gate", action="store_true",
-                    help="禁用加密资产道氏 200 EMA 大趋势顺势门禁（默认开启：牛市只做多，熊市只做空）")
+                    help="禁用加密引擎周线结构顺势门禁（默认开启：高周期摆动结构同向才放行，纯价格结构零滞后指标）")
     ap.add_argument("--seeds", type=int, default=3, help="合成数据的序列条数（越多统计功效越高）")
     ap.add_argument("--bars", type=int, default=1500, help="合成数据每条序列的K线根数")
     ap.add_argument("--json", type=str, default="", dest="json_out", help="结果写入 JSON")

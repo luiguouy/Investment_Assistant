@@ -73,8 +73,8 @@ SCAN_GRID = [
      [8, 10, 12, 15, 20, 25], 15),
     ("max_hold", "最大持仓根数", "根",
      [30, 40, 50, 60, 80, 100], 60),
-    ("ema_span", "趋势门禁 EMA 周期", "根",
-     [100, 150, 200, 250, 300, "OFF"], 200),
+    ("trend_gate", "周线结构顺势门禁", "",
+     [True, False], True),
 ]
 
 # HANDOFF (2026-10-24) 报告的基线, 用于管线接线自检 (MTF 组)
@@ -115,15 +115,15 @@ def lifecycle_stats(trades: pd.DataFrame) -> dict:
 # ==============================================================================
 
 @contextlib.contextmanager
-def crypto_params(stop_buffer_k=None, buf_2b=None, ema_span=None, max_hold=None):
+def crypto_params(stop_buffer_k=None, buf_2b=None, max_hold=None):
     """
-    运行时注入加密策略参数。四个注入点:
+    运行时注入加密策略参数。三个注入点:
       - CRYPTO_2B_STOP_BUFFER_K / CRYPTO_STOP_BUFFER_K: 模块属性, 调用时读取, 直接可补丁;
       - extract_crypto_levels(buffer_k=...): 默认参数在定义时绑定, 须包装注入
         (影响结构止损锚点, 与 CRYPTO_STOP_BUFFER_K 的针形态止损同步联动);
-      - check_crypto_primary_trend(span=...): 同理, 影响趋势门禁 EMA 周期;
       - simulate_crypto_trade(max_hold_bars=...): 同理, 影响最大持仓。
     退出时全部恢复, 保证对已验证引擎零侵入。
+    (原 ema_span 注入点已随 2026-10-24 引擎手术移除: 200 EMA 门禁被周线结构门禁替代。)
     """
     saved = {}
     try:
@@ -137,11 +137,6 @@ def crypto_params(stop_buffer_k=None, buf_2b=None, ema_span=None, max_hold=None)
             sc.extract_crypto_levels = (lambda df_, t_, side_, swings_,
                                         _bk=stop_buffer_k: saved["fn_levels"](
                                             df_, t_, side_, swings_, buffer_k=_bk))
-        if ema_span is not None:
-            saved["fn_trend"] = sc.check_crypto_primary_trend
-            sc.check_crypto_primary_trend = (lambda df_, t_, side_,
-                                             _sp=ema_span: saved["fn_trend"](
-                                                 df_, t_, side_, span=_sp))
         if max_hold is not None:
             saved["fn_sim"] = sc.simulate_crypto_trade
             def _sim_with_hold(*a, _mh=max_hold, **kw):
@@ -156,8 +151,6 @@ def crypto_params(stop_buffer_k=None, buf_2b=None, ema_span=None, max_hold=None)
             sc.CRYPTO_STOP_BUFFER_K = saved["attr_struct"]
         if "fn_levels" in saved:
             sc.extract_crypto_levels = saved["fn_levels"]
-        if "fn_trend" in saved:
-            sc.check_crypto_primary_trend = saved["fn_trend"]
         if "fn_sim" in saved:
             sc.simulate_crypto_trade = saved["fn_sim"]
 
@@ -233,7 +226,7 @@ def binom_two_sided(k: int, n: int, p: float = 0.5) -> float:
 def random_entry_control(df: pd.DataFrame, real_trades: pd.DataFrame,
                          gate_match: bool, n_trials: int = N_TRIALS,
                          seed: int = RNG_SEED, max_hold: int = 60,
-                         min_rr: float = 2.0, ema_span: int = 200) -> dict:
+                         min_rr: float = 2.0) -> dict:
     """
     零假设对照: 把真实交易的入场时点换成随机时点, 其余一切保持一致 ——
       - 逐笔保留真实交易的方向 (多空结构与真实样本一致);
@@ -241,16 +234,27 @@ def random_entry_control(df: pd.DataFrame, real_trades: pd.DataFrame,
       - TP2 沿用引擎的阶梯下限 max(rr1+0.5, min_rr+1.5)×risk;
       - 出场交给同一个 simulate_crypto_trade (分级止盈/保本/止损优先/最大持仓)。
     gate_match=False (N1): 触发根完全随机 —— 检验系统整体;
-    gate_match=True  (N2): 触发根必须与 200 EMA 同侧对齐 —— 剥离趋势门禁贡献,
-                           检验 2B/结构入场形态的边际价值。
+    gate_match=True  (N2): 触发根须与周线结构偏向同侧 (与引擎现行周线结构门禁同构,
+                           以「上一个已完结周」的偏向近似, 零未来函数) —— 剥离趋势
+                           门禁贡献, 检验 2B/结构入场形态的边际价值。
+    (2026-10-24 前此对照用 200 EMA 对齐; 引擎门禁已替换为周线结构门禁, 对照同步替换。)
     """
     n = len(df)
     opens = df["Open"].to_numpy(dtype=float)
-    closes = df["Close"].to_numpy(dtype=float)
     highs, lows = df["High"].to_numpy(dtype=float), df["Low"].to_numpy(dtype=float)
-    ema = df["Close"].ewm(span=ema_span, adjust=False).mean().to_numpy(dtype=float)
     # 与 pe.median_bar_range(df.iloc[:t+1], n=14) 等价: 最近14根 High-Low 的中位数
     bar_rng_arr = pd.Series(highs - lows).rolling(14).median().to_numpy(dtype=float)
+    # 预计算每根日线「上一个已完结周」的结构偏向 (order=3 周线摆动 + MSS), 供 N2 匹配
+    weekly = bt.weekly_from_daily(df)
+    week_bias = np.array([pe.dow_bias(pe.extract_swings(weekly.iloc[:i + 1], order=3),
+                                      df=weekly.iloc[:i + 1], buffer_k=0.0)
+                          for i in range(len(weekly))], dtype=int)
+    struct_bias = np.zeros(n, dtype=int)
+    week_starts = pd.DatetimeIndex([d - pd.Timedelta(days=d.weekday()) for d in df.index])
+    for i, ws in enumerate(week_starts):
+        pos = weekly.index.searchsorted(ws, side="left")
+        if pos > 0:
+            struct_bias[i] = week_bias[pos - 1]
 
     # 真实交易几何池 (按方向分组): (止损距离/振幅, TP1盈亏比)
     geo = {1: [], -1: []}
@@ -278,9 +282,9 @@ def random_entry_control(df: pd.DataFrame, real_trades: pd.DataFrame,
             for _attempt in range(60):
                 k = int(rng.integers(k_lo, k_hi + 1))
                 if gate_match:
-                    if side == 1 and closes[k] < ema[k]:
+                    if side == 1 and struct_bias[k] != 1:
                         continue
-                    if side == -1 and closes[k] > ema[k]:
+                    if side == -1 and struct_bias[k] != -1:
                         continue
                 entry_t = k + 1
                 entry = opens[entry_t]
@@ -506,11 +510,8 @@ def main() -> int:
                     pass_kw["max_wait"] = v
                 elif key == "max_hold":
                     patch_kw["max_hold"] = v
-                elif key == "ema_span":
-                    if v == "OFF":
-                        pass_kw["trend_gate"] = False
-                    else:
-                        patch_kw["ema_span"] = v
+                elif key == "trend_gate":
+                    pass_kw["trend_gate"] = v
                 arm_st = {}
                 for arm in ("MTF", "MTF+HTF"):
                     trades = run_crypto_arm(events_by_arm[arm], df, fwd,
