@@ -19,7 +19,7 @@ v2.1 修复摘要（2026-10-22 审计修复 4 项 P0 缺陷）：
 
 v2.0 变更摘要（10项优化）：
   P0-1: HTF 大势拐点提取与输出（三级联立完整化）
-  P0-2: 成交量结构分析 + 量价背离检测
+  P0-2: 成交量结构分析（量价背离检测已按裸K流派边界移除, 2026-10-24）
   P0-3: 多腿斐波那契比例 + 共振区 (Fibonacci Cluster) 检测
   P1-4: 日内 Opening Range (ORH/ORL, 15分钟)
   P1-5: 市场结构转换 (MSS) 精确检测
@@ -1298,10 +1298,11 @@ def scan_price_action(df: pd.DataFrame, key_levels: list = None,
 
 def analyze_volume(df: pd.DataFrame, lookback: int = 20, recent: int = 5) -> dict:
     """
-    分析成交量结构：计算均量基准，对最近 N 根K线标注放量/缩量，
-    并检测量价背离（价格新高但量缩 / 价格新低但量缩）。
+    分析成交量结构：计算均量基准，对最近 N 根K线标注放量/缩量。
+    量价背离检测已按裸K流派边界移除 (2026-10-24)：
+    形态/结构/位置全部由价格决定，量能仅作为方向层突破真伪过滤器 (道氏第6条)。
     """
-    result = {"avg_volume": 0, "recent_bars": [], "divergences": [], "available": True}
+    result = {"avg_volume": 0, "recent_bars": [], "available": True}
     if len(df) < lookback:
         return result
     if "Volume" not in df.columns:
@@ -1339,23 +1340,7 @@ def analyze_volume(df: pd.DataFrame, lookback: int = 20, recent: int = 5) -> dic
             "candle": "阳线" if row['Close'] > row['Open'] else "阴线"
         })
 
-    # 量价背离检测
-    if len(df) >= 10:
-        last_5 = df.tail(5)
-        prev_5 = df.iloc[-10:-5]
-
-        # 顶背离：价新高 + 量萎缩
-        if last_5['High'].max() > prev_5['High'].max():
-            if last_5['Volume'].mean() < prev_5['Volume'].mean() * 0.8:
-                result["divergences"].append(
-                    "⚠️ 量价顶背离：价格创近期新高，但成交量明显萎缩 → 上涨动能衰竭信号"
-                )
-        # 底背离：价新低 + 量萎缩
-        if last_5['Low'].min() < prev_5['Low'].min():
-            if last_5['Volume'].mean() < prev_5['Volume'].mean() * 0.8:
-                result["divergences"].append(
-                    "⚠️ 量价底背离：价格创近期新低，但卖压成交量减弱 → 下跌动能枯竭信号"
-                )
+    # 量价背离检测已移除 (裸K流派边界, 2026-10-24)
 
     return result
 
@@ -1951,15 +1936,11 @@ def analyze_single_ticker(ticker: str, mode: str, market_dow: dict = None,
         print(f"  ▶ MTF 近20根均量: {vol_mtf['avg_volume']:,}")
         for bar in vol_mtf.get("recent_bars", []):
             print(f"      - [{bar['time']}] {bar['candle']} | 量: {bar['volume']:,} ({bar['ratio']}x) {bar['tag']}")
-        for div in vol_mtf.get("divergences", []):
-            print(f"  {div}")
     else:
         print(f"  ▶ MTF 成交量分析跳过：{vol_mtf.get('reason', '不可用')}")
 
     if vol_ltf.get("available", True):
         print(f"  ▶ LTF 近20根均量: {vol_ltf['avg_volume']:,}")
-        for div in vol_ltf.get("divergences", []):
-            print(f"  {div}")
     else:
         print(f"  ▶ LTF 成交量分析跳过：{vol_ltf.get('reason', '不可用')}")
 
