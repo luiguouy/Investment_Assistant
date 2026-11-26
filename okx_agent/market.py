@@ -103,6 +103,19 @@ def _channel_direction(channel: dict) -> int:
     return 0
 
 
+def _to_json_safe(obj: Any) -> Any:
+    """Recursively convert numpy/pandas scalars to native Python JSON-serializable types."""
+    if isinstance(obj, dict):
+        return {str(k): _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    if hasattr(obj, "item") and callable(obj.item):
+        return obj.item()
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    return obj
+
+
 def _sanitize_swings(swings: list, tail: int = 6) -> list[dict]:
     out = []
     for s in swings[-tail:]:
@@ -142,7 +155,7 @@ def analyze_timeframe(
     ]
     pa_signals = pe.scan_price_action(df, key_levels=key_levels, bar_rng=bar_rng)
 
-    return {
+    return _to_json_safe({
         "bars": int(len(df)),
         "last_ts": df.index[-1].isoformat(),
         "last_close": float(df["Close"].iloc[-1]),
@@ -156,7 +169,7 @@ def analyze_timeframe(
         "box": box,
         "recent_swings": _sanitize_swings(swings),
         "pa_signals": pa_signals,
-    }
+    })
 
 
 def check_four_way_consistency(

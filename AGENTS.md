@@ -50,3 +50,12 @@ When analyzing markets or tickers with `pa_engine.py` or `analyze_symbol.py`:
    - On restart or watcher failure, immediately call `swap_get_positions` + `swap_get_orders(status="open")` + `swap_get_algo_orders(status="pending")` to reconcile live state before relaunching the watcher.
 4. **In-Position Liquidity Collapse or Gap Slippage (`> 1.5 * 1R`)**:
    - If realized SL slippage exceeds `1.5 * 1R` (or off-hours top-5 book depth collapses below `1x` position notional), record the full realized `-R` into `risk_ledger.py` immediately and halt off-hours trading on that thin-book instrument.
+
+## 5. OKX AI Agent Deterministic CLI Toolchain (`okx-ai-trading`)
+
+Follow [.agents/skills/okx-ai-trading/SKILL.md](.agents/skills/okx-ai-trading/SKILL.md) and delegate all numeric/gate computations to `okx_agent`:
+- `python -m okx_agent.market` — OKX multi-timeframe candle fetch + `pa_engine` Four-Way Consistency Check (`CONFLICT_HALT` exits `2`).
+- `python -m okx_agent.preflight` — Pre-order hard gate (`acctLv >= 2`, depth `>= 3x`, spread `<= 5 bps`, net `Weighted_RR >= 2.5`, liquidation guard, `risk_ledger.py`) + atomic split-TP `swap_place_order` payload generator (rejections exit `1`).
+- `python -m okx_agent.watcher` — Zero-context 15s background price watcher with hysteresis and 5-error circuit breaker (exit `3`).
+- `python -m okx_agent.reconcile` — Live position/order/algo vs `risk_ledger.json` reconciler and failure-mode playbook planner.
+- `python -m okx_agent.journal` — Append-only trade and rejection audit log (`data/okx_journal.jsonl`).
