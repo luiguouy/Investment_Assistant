@@ -1,0 +1,178 @@
+// useWebSocketControl.ts
+// Antigravity MCP / CLI 双向 WebSocket 控制管道
+import { ref, onMounted, onUnmounted } from 'vue';
+
+export interface WSControlMessage {
+  action:
+    | 'open'
+    | 'add_markers'
+    | 'draw_lines'
+    | 'draw_boxes'
+    | 'draw_channel_lines'
+    | 'draw_wave_lines'
+    | 'draw_time_lines'
+    | 'draw_fib_lines'
+    | 'draw_gap_boxes'
+    | 'draw_ema200'
+    | 'clear'
+    | 'run_strategy'
+    | 'capture_chart'
+    | 'refresh_watchlist'
+    | 'radar_updated'
+    | 'ping';
+  symbol?: string;
+  period?: string;
+  mode?: string;
+  markers?: any[];
+  lines?: any[];
+  boxes?: any[];
+  channel_lines?: any[];
+  wave_lines?: any;
+  time_lines?: any[];
+  fib_lines?: any[];
+  gap_boxes?: any[];
+  ema200_data?: any[];
+  kind?: string;
+  request_id?: string;
+}
+
+export function useWebSocketControl(handlers: {
+  onOpenChart?: (symbol: string, period?: string) => void;
+  onAddMarkers?: (markers: any[], symbol?: string) => void;
+  onDrawLines?: (lines: any[], symbol?: string) => void;
+  onDrawBoxes?: (boxes: any[], symbol?: string) => void;
+  onDrawChannelLines?: (channelLines: any[], symbol?: string) => void;
+  onDrawWaveLines?: (waveLines: any, symbol?: string) => void;
+  onDrawTimeLines?: (timeLines: any[], symbol?: string) => void;
+  onDrawFibLines?: (fibLines: any[], symbol?: string) => void;
+  onDrawGapBoxes?: (gapBoxes: any[], symbol?: string) => void;
+  onDrawEma200?: (ema200Data: any[], symbol?: string) => void;
+  onClearAnnotations?: (kind?: string, symbol?: string) => void;
+  onRunStrategy?: (mode?: string, symbol?: string) => void;
+  onCaptureChart?: (requestId?: string) => Promise<string | null> | (string | null);
+  onRefreshWatchlist?: () => void;
+  onRadarUpdated?: (period?: string) => void;
+}) {
+  const isConnected = ref(false);
+  let ws: WebSocket | null = null;
+  let reconnectTimer: any = null;
+  let isClosedManually = false;
+  let reconnectDelay = 2000;
+  const MAX_RECONNECT_DELAY = 15000;
+
+  function connect() {
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host || '127.0.0.1:8000';
+    const url = `${protocol}//${host}/ws/control`;
+
+    try {
+      ws = new WebSocket(url);
+
+      ws.onopen = () => {
+        isConnected.value = true;
+        reconnectDelay = 2000;
+        // 注册控制客户端
+        ws?.send(JSON.stringify({ type: 'register', role: 'frontend' }));
+      };
+
+      ws.onmessage = async (evt) => {
+        try {
+          const msg: WSControlMessage = JSON.parse(evt.data);
+          if (msg.action === 'ping') {
+            ws?.send(JSON.stringify({ type: 'pong' }));
+            return;
+          }
+          if (msg.action === 'open' && msg.symbol && handlers.onOpenChart) {
+            handlers.onOpenChart(msg.symbol, msg.period);
+          } else if (msg.action === 'add_markers' && msg.markers !== undefined && handlers.onAddMarkers) {
+            handlers.onAddMarkers(msg.markers || [], msg.symbol);
+          } else if (msg.action === 'draw_lines' && msg.lines !== undefined && handlers.onDrawLines) {
+            handlers.onDrawLines(msg.lines || [], msg.symbol);
+          } else if (msg.action === 'draw_boxes' && msg.boxes !== undefined && handlers.onDrawBoxes) {
+            handlers.onDrawBoxes(msg.boxes || [], msg.symbol);
+          } else if (msg.action === 'draw_channel_lines' && msg.channel_lines !== undefined && handlers.onDrawChannelLines) {
+            handlers.onDrawChannelLines(msg.channel_lines || [], msg.symbol);
+          } else if (msg.action === 'draw_wave_lines' && msg.wave_lines !== undefined && handlers.onDrawWaveLines) {
+            handlers.onDrawWaveLines(msg.wave_lines, msg.symbol);
+          } else if (msg.action === 'draw_time_lines' && handlers.onDrawTimeLines) {
+            handlers.onDrawTimeLines(msg.time_lines || [], msg.symbol);
+          } else if (msg.action === 'draw_fib_lines' && handlers.onDrawFibLines) {
+            handlers.onDrawFibLines(msg.fib_lines || [], msg.symbol);
+          } else if (msg.action === 'draw_gap_boxes' && handlers.onDrawGapBoxes) {
+            handlers.onDrawGapBoxes(msg.gap_boxes || [], msg.symbol);
+          } else if (msg.action === 'draw_ema200' && handlers.onDrawEma200) {
+            handlers.onDrawEma200(msg.ema200_data || [], msg.symbol);
+          } else if (msg.action === 'clear' && handlers.onClearAnnotations) {
+            handlers.onClearAnnotations(msg.kind, msg.symbol);
+          } else if (msg.action === 'run_strategy' && handlers.onRunStrategy) {
+            handlers.onRunStrategy(msg.mode, msg.symbol);
+          } else if (msg.action === 'capture_chart' && handlers.onCaptureChart) {
+            const dataUrl = await handlers.onCaptureChart(msg.request_id);
+            if (dataUrl) {
+              ws?.send(
+                JSON.stringify({
+                  type: 'capture_result',
+                  request_id: msg.request_id,
+                  image_base64: dataUrl,
+                })
+              );
+            }
+          } else if (msg.action === 'refresh_watchlist' && handlers.onRefreshWatchlist) {
+            handlers.onRefreshWatchlist();
+          } else if (msg.action === 'radar_updated' && handlers.onRadarUpdated) {
+            handlers.onRadarUpdated(msg.period);
+          }
+        } catch (e) {
+          console.warn('WS message parse error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        isConnected.value = false;
+        if (!isClosedManually) {
+          reconnectTimer = setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+        }
+      };
+
+      ws.onerror = () => {
+        ws?.close();
+      };
+    } catch (e) {
+      if (!isClosedManually) {
+        reconnectTimer = setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+      }
+    }
+  }
+
+  function sendState(state: { symbol: string; period: string; current_price?: number }) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'client_state_update', ...state }));
+    }
+  }
+
+  onMounted(() => {
+    isClosedManually = false;
+    connect();
+  });
+
+  onUnmounted(() => {
+    isClosedManually = true;
+    clearTimeout(reconnectTimer);
+    if (ws) {
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      ws.close();
+      ws = null;
+    }
+  });
+
+  return {
+    isConnected,
+    sendState,
+  };
+}

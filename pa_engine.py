@@ -3265,5 +3265,178 @@ def main() -> int:
     return _print_run_summary({ticker: status or "failed"})
 
 
+
+
+def _detect_wave5_variants_and_volume(cand: list, direction: int, df: pd.DataFrame = None,
+                                      rule1_passed: bool = True, rule2_passed: bool = True, rule3_passed: bool = True) -> dict:
+    """检测失败第五浪(Truncation)、终结倾斜三角形(Ending Diagonal)与5浪量能背离。"""
+    if len(cand) < 6:
+        return {"variant": None, "wave5_volume_divergence": False}
+
+    p0, p1, p2, p3, p4, p5 = [float(s["price"]) for s in cand]
+    l1 = abs(p1 - p0)
+    l3 = abs(p3 - p2)
+
+    variant = None
+    # 1. 失败第五浪：3浪强劲延伸 (>=1.618*L1)，5浪未创新高/新低但其余铁律成立
+    is_trunc = (
+        rule1_passed and rule3_passed and l1 > 0 and (l3 / l1) >= 1.618 and
+        ((direction == 1 and p4 < p5 <= p3) or (direction == -1 and p3 <= p5 < p4))
+    )
+    if is_trunc:
+        variant = "truncated_wave_5"
+
+    # 2. 终结倾斜三角形：允许4浪重叠1浪领地，但高低点呈楔形收敛 (两边斜率收敛)
+    if variant is None and rule1_passed and not rule3_passed:
+        i1, i2, i3, i4, i5 = [_resolve_swing_idx(cand[k], df) for k in (1, 2, 3, 4, 5)]
+        if None not in (i1, i2, i3, i4, i5) and i5 > i1 and i4 > i2:
+            if direction == 1 and p1 < p3 < p5 and p2 < p4 < p1:
+                slope_hi = (p5 - p1) / float(i5 - i1)
+                slope_lo = (p4 - p2) / float(i4 - i2)
+                if 0 < slope_hi < slope_lo:
+                    variant = "ending_diagonal"
+            elif direction == -1 and p1 > p3 > p5 and p2 > p4 > p1:
+                slope_lo = (p5 - p1) / float(i5 - i1)
+                slope_hi = (p4 - p2) / float(i4 - i2)
+                if slope_hi < slope_lo < 0:
+                    variant = "ending_diagonal"
+
+    # 3. 第5浪量能背离校验（5浪区间均量 < 0.8 * 3浪区间均量）
+    w5_vol_div = False
+    if df is not None and "Volume" in df.columns:
+        i2, i3, i4, i5 = [_resolve_swing_idx(cand[k], df) for k in (2, 3, 4, 5)]
+        if None not in (i2, i3, i4, i5) and i3 > i2 and i5 > i4:
+            v = df["Volume"].to_numpy(dtype=float)
+            v3 = float(np.mean(v[i2:i3 + 1]))
+            v5 = float(np.mean(v[i4:i5 + 1]))
+            if v3 > 0 and v5 < 0.8 * v3:
+                w5_vol_div = True
+
+    return {"variant": variant, "wave5_volume_divergence": w5_vol_div}
+
+
+def analyze_dow_volume(df: pd.DataFrame, dow_bias: int = 0, lookback: int = 20) -> dict:
+    """
+    道氏理论成交量验证原则 (Dow Theory Volume Confirmation Principle):
+      1. 顺势推进放量：顺应主要趋势推进时成交量放大；
+      2. 次要回调缩量：逆势次要调整时成交量萎缩，体现洗盘与蓄势；
+      3. 量价背离预警：价格创出新高/新低但成交量显著衰竭，提示动能耗尽。
+    """
+    if df is None or len(df) < 5:
+        return {
+            "status": "无成交量数据",
+            "description": "数据量不足，跳过量能验证",
+            "volume_trend_aligned": True,
+            "avg_volume": 0,
+            "recent_volume_ratio": 1.0,
+        }
+    if "Volume" not in df.columns:
+        return {
+            "status": "无成交量数据",
+            "description": "数据源未提供 Volume 列，跳过量能验证",
+            "volume_trend_aligned": True,
+            "avg_volume": 0,
+            "recent_volume_ratio": 1.0,
+        }
+
+    vol = df["Volume"].fillna(0).to_numpy(dtype=float)
+    if np.all(vol == 0):
+        return {
+            "status": "无成交量数据",
+            "description": "成交量全为 0，跳过量能验证",
+            "volume_trend_aligned": True,
+            "avg_volume": 0,
+            "recent_volume_ratio": 1.0,
+        }
+
+    n = len(df)
+    lb = min(lookback, n)
+    avg_vol = float(np.mean(vol[-lb:])) if lb > 0 else 1.0
+    if avg_vol <= 0:
+        avg_vol = 1.0
+
+    recent_bars = min(5, n)
+    recent_vol = float(np.mean(vol[-recent_bars:]))
+    vol_ratio = round(recent_vol / avg_vol, 2)
+
+    closes = df["Close"].to_numpy(dtype=float)
+    opens = df["Open"].to_numpy(dtype=float)
+
+    up_mask = closes[-lb:] > opens[-lb:]
+    dn_mask = closes[-lb:] < opens[-lb:]
+
+    up_vols = vol[-lb:][up_mask]
+    dn_vols = vol[-lb:][dn_mask]
+    avg_up_vol = float(np.mean(up_vols)) if len(up_vols) > 0 else avg_vol
+    avg_dn_vol = float(np.mean(dn_vols)) if len(dn_vols) > 0 else avg_vol
+
+    recent_price_change = (closes[-1] - closes[-recent_bars]) / max(0.01, closes[-recent_bars])
+    is_new_high = closes[-1] >= np.max(closes[-min(15, n):])
+    is_new_low = closes[-1] <= np.min(closes[-min(15, n):])
+
+    if dow_bias > 0 or (dow_bias == 0 and closes[-1] >= opens[-1]):
+        # 多头/看涨偏向
+        if is_new_high and vol_ratio < 0.75:
+            status = "量价背离 (创高缩量)"
+            desc = f"价格创出阶段新高但近5日均量仅为基准的 {vol_ratio:.2f}x，动能衰竭预警"
+            aligned = False
+        elif recent_price_change > 0 and vol_ratio >= 1.2:
+            status = "放量推进 (顺势放量)"
+            desc = f"顺势推进放量 ({vol_ratio:.2f}x 基准)，多头买盘强劲"
+            aligned = True
+        elif recent_price_change <= 0 and vol_ratio <= 0.85:
+            status = "缩量回调 (良性蓄势)"
+            desc = f"次回调缩量 ({vol_ratio:.2f}x 基准)，抛压衰减，符合道氏次要趋势蓄势特征"
+            aligned = True
+        elif avg_up_vol > avg_dn_vol * 1.15:
+            status = "阳线放量 (多头占优)"
+            desc = f"上涨阳线均量高于阴线 ({avg_up_vol/max(1.0, avg_dn_vol):.2f}x)，资金净流入"
+            aligned = True
+        else:
+            status = "量能平稳正常"
+            desc = f"成交量处于平稳常态 ({vol_ratio:.2f}x 基准)"
+            aligned = True
+    else:
+        # 空头/看跌偏向
+        if is_new_low and vol_ratio < 0.75:
+            status = "量价背离 (创新低缩量)"
+            desc = f"价格创出新低但成交量萎缩 ({vol_ratio:.2f}x 基准)，空头衰竭预警"
+            aligned = False
+        elif recent_price_change < 0 and vol_ratio >= 1.2:
+            status = "放量下杀 (顺势放量)"
+            desc = f"空头下挫放量 ({vol_ratio:.2f}x 基准)，主跌动能释放"
+            aligned = True
+        elif recent_price_change >= 0 and vol_ratio <= 0.85:
+            status = "缩量抽反 (弱势反弹)"
+            desc = f"反弹缩量 ({vol_ratio:.2f}x 基准)，买盘动能匮乏，空头主导"
+            aligned = True
+        elif avg_dn_vol > avg_up_vol * 1.15:
+            status = "阴线放量 (空头占优)"
+            desc = f"下跌阴线均量高于阳线 ({avg_dn_vol/max(1.0, avg_up_vol):.2f}x)，空头抛压主导"
+            aligned = True
+        else:
+            status = "量能平稳正常"
+            desc = f"成交量处于平稳常态 ({vol_ratio:.2f}x 基准)"
+            aligned = True
+
+    return {
+        "status": status,
+        "description": desc,
+        "volume_trend_aligned": aligned,
+        "avg_volume": int(avg_vol),
+        "recent_volume_ratio": vol_ratio,
+        "up_down_volume_ratio": round(avg_up_vol / max(1.0, avg_dn_vol), 2),
+    }
+
+
+def _import_strategy_layer():
+    """兼容包导入与脚本直接运行的安全导入。"""
+    try:
+        from . import strategy_layer as sl
+        return sl
+    except ImportError:
+        import strategy_layer as sl
+        return sl
+
 if __name__ == "__main__":
     sys.exit(main())

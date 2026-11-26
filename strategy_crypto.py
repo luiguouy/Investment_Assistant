@@ -773,3 +773,158 @@ def simulate_crypto_trade(df: pd.DataFrame, entry_t: int, entry_price: float,
         "tp2_price": round(tp2_price, 2),
         "exit_records": exit_records,
     }
+
+
+def check_recent_crypto_2b_sweep(df: pd.DataFrame, side: int, swings: list,
+                                 bar_rng: float = None, lookback: int = 5) -> dict:
+    """
+    针对加密资产最近几根 K 线扫描 2B 流动性猎杀 (2B Liquidity Sweep) 形态：
+      多头：跌破关键前低引爆多头止损盘后迅速收回，止损锚定于刺透针尖外 0.35x ATR；
+      空头：突破关键前高引爆空头止损盘后迅速收回，止损锚定于刺透针尖外 0.35x ATR。
+    """
+    if df is None or len(df) < 3 or not swings:
+        return {"detected": False}
+
+    if bar_rng is None or bar_rng <= 0:
+        bar_rng = pe.median_bar_range(df, n=14)
+    if bar_rng <= 0:
+        bar_rng = float(df["Close"].iloc[-1]) * 0.02
+
+    n = len(df)
+    conf = [s for s in swings if s.get("confirmed", True)] or swings
+    if side == 1:
+        lows = [s for s in conf if s.get("type") == "Low"]
+        if not lows:
+            return {"detected": False}
+        key_low = float(lows[-1]["price"])
+        low_idx = int(lows[-1].get("index", 0))
+
+        start_k = max(low_idx + 1, n - lookback)
+        for k in range(start_k, n):
+            trig = detect_crypto_trigger_on_bar(df, k, side=1, key_level=key_low, bar_rng=bar_rng)
+            if trig.get("triggered") and trig.get("is_2b"):
+                return {
+                    "detected": True,
+                    "pattern": "2B_bull_sweep",
+                    "bar_index": k,
+                    "sweep_price": trig["trigger_bar_low"],
+                    "key_level": key_low,
+                    "stop_loss": trig["tight_stop"],
+                    "buffer_used": round(CRYPTO_2B_STOP_BUFFER_K * bar_rng, 2),
+                    "desc": f"2B多头扫损猎杀: 针尖 ${trig['trigger_bar_low']:.2f} 刺破前低 ${key_low:.2f} 后强力收回，防守止损锚定针尖外 0.35x ATR (${trig['tight_stop']:.2f})"
+                }
+    else:
+        highs = [s for s in conf if s.get("type") == "High"]
+        if not highs:
+            return {"detected": False}
+        key_high = float(highs[-1]["price"])
+        high_idx = int(highs[-1].get("index", 0))
+
+        start_k = max(high_idx + 1, n - lookback)
+        for k in range(start_k, n):
+            trig = detect_crypto_trigger_on_bar(df, k, side=-1, key_level=key_high, bar_rng=bar_rng)
+            if trig.get("triggered") and trig.get("is_2b"):
+                return {
+                    "detected": True,
+                    "pattern": "2B_bear_sweep",
+                    "bar_index": k,
+                    "sweep_price": trig["trigger_bar_high"],
+                    "key_level": key_high,
+                    "stop_loss": trig["tight_stop"],
+                    "buffer_used": round(CRYPTO_2B_STOP_BUFFER_K * bar_rng, 2),
+                    "desc": f"2B空头扫损猎杀: 针尖 ${trig['trigger_bar_high']:.2f} 刺破前高 ${key_high:.2f} 后强力收回，防守止损锚定针尖外 0.35x ATR (${trig['tight_stop']:.2f})"
+                }
+
+    return {"detected": False}
+
+
+def _slice_weekly_causal(df: pd.DataFrame, t: int, weekly_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    严格因果截断外部传入的预聚合 weekly_df（W-FRI 口径）：
+      1. 仅保留标签日期 <= df.index[t] 的已完整走完周线；
+      2. 对最近完整周之后至第 t 根日线的残余日线（1~6 根）实时聚合为当周进行中周线并拼接。
+    与 _weekly_prefix(df, t) 数学完全等价，且彻底杜绝偷看当周后续日线。
+    """
+    if not isinstance(df.index, pd.DatetimeIndex) or not isinstance(weekly_df.index, pd.DatetimeIndex):
+        return _weekly_prefix(df, t)
+
+    cutoff_ts = df.index[t]
+    w_idx = weekly_df.index
+    # 时区对齐保护
+    if (cutoff_ts.tzinfo is None) != (w_idx.tzinfo is None):
+        cutoff_cmp = cutoff_ts.tz_localize(None) if cutoff_ts.tzinfo is not None else cutoff_ts
+        w_cmp = w_idx.tz_localize(None) if w_idx.tzinfo is not None else w_idx
+        completed = weekly_df.loc[w_cmp <= cutoff_cmp]
+        last_done = completed.index[-1].tz_localize(None) if not completed.empty else None
+        sub_daily = df.iloc[:t + 1]
+        sub_idx_cmp = sub_daily.index.tz_localize(None) if sub_daily.index.tzinfo is not None else sub_daily.index
+        rem_daily = sub_daily.loc[sub_idx_cmp > last_done] if last_done is not None else sub_daily
+    else:
+        completed = weekly_df.loc[w_idx <= cutoff_ts]
+        if not completed.empty:
+            last_done = completed.index[-1]
+            sub_daily = df.iloc[:t + 1]
+            rem_daily = sub_daily.loc[sub_daily.index > last_done]
+        else:
+            rem_daily = df.iloc[:t + 1]
+
+    if rem_daily.empty:
+        return completed
+
+    # 聚合当周截至 t 日的局部周线
+    agg_map = {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+    if "Volume" in rem_daily.columns and "Volume" in completed.columns:
+        agg_map["Volume"] = "sum"
+    partial_w = rem_daily.resample("W-FRI").agg(agg_map).dropna(subset=["Open", "High", "Low", "Close"])
+    if completed.empty:
+        return partial_w
+    return pd.concat([completed, partial_w])
+
+
+def summarize_crypto_trades(trades: list) -> dict:
+    """
+    强制输出加密策略双轨绩效报告：
+      - all_trades: 全样本（含 312/519/Luna/FTX 黑天鹅，用于仓位风控上限评估）
+      - excl_black_swan: 剔除系统性黑天鹅窗口（用于评估常态行情策略 Alpha）
+    """
+    def _calc(sub_trades: list) -> dict:
+        if not sub_trades:
+            return {"trades": 0}
+        df_tr = pd.DataFrame(sub_trades)
+        n_total = len(df_tr)
+
+        g_w = df_tr[df_tr["gross_pnl_pct"] > 0]["gross_pnl_pct"].sum()
+        g_l = abs(df_tr[df_tr["gross_pnl_pct"] <= 0]["gross_pnl_pct"].sum())
+        n_w = df_tr[df_tr["net_pnl_pct"] > 0]["net_pnl_pct"].sum()
+        n_l = abs(df_tr[df_tr["net_pnl_pct"] <= 0]["net_pnl_pct"].sum())
+
+        # 按单笔净收益复利计算净值曲线最大回撤
+        equity_curve = (1.0 + df_tr["net_pnl_pct"]).cumprod()
+        peak = equity_curve.cummax()
+        max_dd = float(((equity_curve - peak) / peak).min())
+
+        return {
+            "trades": n_total,
+            "gross_win_rate": float((df_tr["gross_pnl_pct"] > 0).mean()),
+            "net_win_rate": float((df_tr["net_pnl_pct"] > 0).mean()),
+            "gross_pf": float(g_w / g_l) if g_l > 0 else (float("inf") if g_w > 0 else 0.0),
+            "net_pf": float(n_w / n_l) if n_l > 0 else (float("inf") if n_w > 0 else 0.0),
+            "avg_gross_r": float(df_tr["gross_r"].mean()),
+            "avg_net_r": float(df_tr["net_r"].mean()),
+            "exp_gross_pct": float(df_tr["gross_pnl_pct"].mean()),
+            "exp_net_pct": float(df_tr["net_pnl_pct"].mean()),
+            "avg_friction_drag_pct": float(df_tr["friction_drag_pct"].mean()),
+            "avg_funding_drag_pct": float(df_tr["funding_drag_pct"].mean()),
+            "max_drawdown_net": max_dd,
+            "mae_med": float(df_tr["mae"].median()),
+            "mfe_med": float(df_tr["mfe"].median()),
+            "hold_bars_mean": float(df_tr["hold_bars"].mean()),
+        }
+
+    completed = [t for t in trades if t.get("status") == "completed"]
+    non_bs = [t for t in completed if not t.get("overlaps_black_swan", False)]
+    return {
+        "all_trades": _calc(completed),
+        "excl_black_swan": _calc(non_bs),
+        "black_swan_trades_count": len(completed) - len(non_bs),
+    }
