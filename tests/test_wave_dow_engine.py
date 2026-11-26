@@ -120,11 +120,11 @@ class TestWaveDowEngine(unittest.TestCase):
         self.assertAlmostEqual(res["ratios"]["w4_retrace"], 0.24, places=2)
 
     # ==========================================================================
-    # 2. 波浪位置狙击决策 (Wave Sniper)
+    # 2. 波浪位置客观证伪与斐波坐标尺 (Wave Invalidation & Fibonacci Ruler)
     # ==========================================================================
 
     def test_wave3_breakout_sniper(self):
-        """测试第 3 浪主升突破识别与放行"""
+        """测试第 3 浪进行中客观证伪基准与斐波坐标尺（已剔除主观预测入场信号）"""
         # P0=100, P1=120, P2=108 (守住100), 现价=122 向上突破 P1
         swings = [
             {"index": 10, "type": "Low", "price": 100.0, "confirmed": True},
@@ -132,13 +132,16 @@ class TestWaveDowEngine(unittest.TestCase):
             {"index": 30, "type": "Low", "price": 108.0, "confirmed": True},
         ]
         eval_res = pe.evaluate_wave_position(swings, current_price=122.0)
-        self.assertEqual(eval_res["signal"], "wave3_breakout")
-        self.assertEqual(eval_res["action"], "allow")
-        self.assertEqual(eval_res["status"], "wave3_impulse_breakout")
-        self.assertIn("确认主升第3浪起爆", eval_res["reason"])
+        self.assertEqual(eval_res["status"], "valid")
+        self.assertEqual(eval_res["wave_pattern"], "developing_wave_3")
+        self.assertEqual(eval_res["wave4_invalidation_level"], 120.0)
+        self.assertEqual(eval_res["rule1_invalidation_level"], 100.0)
+        self.assertIn("1.618", eval_res["fib_projections"])
+        self.assertAlmostEqual(eval_res["fib_projections"]["1.618"], 140.36, places=1)
+        self.assertNotEqual(eval_res.get("signal"), "wave3_breakout")
 
     def test_wave5_exhaustion_blocking(self):
-        """测试第 5 浪冲顶诱多与动能衰竭拦截"""
+        """测试第 5 浪客观证伪止损与非一票否决特性（彻底废除 rejected_by_wave5_exhaustion）"""
         # P0=100, P1=120, P2=110, P3=160, P4=145 (进行中的第5浪)
         # 现价 165 (创新高摸顶)，但成交量大幅萎缩
         swings = [
@@ -158,17 +161,19 @@ class TestWaveDowEngine(unittest.TestCase):
         }, index=pd.bdate_range("2026-01-01", periods=30))
 
         eval_res = pe.evaluate_wave_position(swings, df=df_exhaust, current_price=165.0)
-        self.assertEqual(eval_res["signal"], "wave5_exhaustion")
-        self.assertEqual(eval_res["action"], "block_chasing")
-        self.assertEqual(eval_res["status"], "rejected_by_wave5_exhaustion")
+        self.assertEqual(eval_res["status"], "valid")
+        self.assertEqual(eval_res["wave_pattern"], "developing_wave_5")
+        self.assertEqual(eval_res["wave4_invalidation_level"], 120.0)
+        self.assertNotEqual(eval_res.get("signal"), "wave5_exhaustion")
+        self.assertNotEqual(eval_res.get("status"), "rejected_by_wave5_exhaustion")
 
-        # 验证在 simulate_strategy_trade 中被拦截
+        # 验证在 simulate_strategy_trade 中不再被 wave5 一票否决拦截
         tr = sl.simulate_strategy_trade(df_exhaust, 0, 165.0, side=1, stop_price=145.0, tp_price=190.0,
                                         wave_status="rejected_by_wave5_exhaustion")
-        self.assertEqual(tr["status"], "rejected_by_wave5_exhaustion")
+        self.assertNotEqual(tr.get("status"), "rejected_by_wave5_exhaustion")
 
     def test_wave_c_reversal_detection(self):
-        """测试 C 浪终结与 2B 假跌破扫损筑底反转"""
+        """测试 C 浪客观结构与斐波那契坐标比例尺（已剔除主观预测入场信号）"""
         # A 浪: 150 -> 130 (LA=20)
         # B 浪: 130 -> 142
         # C 浪: 142 -> 128 (LC=14, LC/LA = 0.70 ≈ 0.618 斐波黄金比例)
@@ -180,10 +185,10 @@ class TestWaveDowEngine(unittest.TestCase):
             {"index": 35, "type": "Low",  "price": 128.0, "confirmed": True}, # C 浪终点 2B 探底
         ]
         eval_res = pe.evaluate_wave_position(swings, current_price=131.0)
-        self.assertEqual(eval_res["signal"], "wave_c_reversal")
-        self.assertEqual(eval_res["action"], "bottom_reversal")
-        self.assertEqual(eval_res["status"], "wave_c_bottom_reversal")
-        self.assertIn("构成波浪筑底反转", eval_res["reason"])
+        self.assertEqual(eval_res["status"], "valid")
+        self.assertEqual(eval_res["wave_pattern"], "corrective_abc")
+        self.assertIn("1.000", eval_res["fib_projections"])
+        self.assertNotEqual(eval_res.get("signal"), "wave_c_reversal")
 
     # ==========================================================================
     # 3. 大盘指数相互印证硬闸门 (Market Confirmation Gate)
@@ -339,7 +344,7 @@ class TestWaveDowEngine(unittest.TestCase):
         self.assertEqual(eval_res["signal"], "neutral")
 
     def test_corrective_abc_in_long_history(self):
-        """测试长序列下 ABC 调整浪与 2B 假跌破扫损反转能正常识别"""
+        """测试长序列下 ABC 调整浪正常识别与客观斐波坐标尺（已剔除主观预测入场信号）"""
         swings_abc = [
             {"index": 2, "type": "Low", "price": 90.0, "confirmed": True},
             {"index": 10, "type": "High", "price": 140.0, "confirmed": True},
@@ -351,8 +356,10 @@ class TestWaveDowEngine(unittest.TestCase):
             {"index": 55, "type": "Low",  "price": 128.0, "confirmed": True},
         ]
         eval_res = pe.evaluate_wave_position(swings_abc, current_price=131.0)
-        self.assertEqual(eval_res["signal"], "wave_c_reversal")
-        self.assertEqual(eval_res["action"], "bottom_reversal")
+        self.assertEqual(eval_res["status"], "valid")
+        self.assertEqual(eval_res["wave_pattern"], "corrective_abc")
+        self.assertIn("1.000", eval_res["fib_projections"])
+        self.assertNotEqual(eval_res.get("signal"), "wave_c_reversal")
 
 
 if __name__ == "__main__":

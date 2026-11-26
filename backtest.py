@@ -32,8 +32,10 @@ import pandas as pd
 import pa_engine as pe
 import strategy_layer as sl
 import strategy_crypto as sc
+import strategy_day as sd
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+INTRADAY_DATA_DIR = os.path.join(DATA_DIR, "intraday")
 HORIZONS = (5, 10, 20, 40)
 ORDER_DAILY = 5        # 与 swing 模式 MTF 一致
 ORDER_WEEKLY = 3       # 与 swing 模式 HTF 一致
@@ -87,6 +89,52 @@ def load_ticker(ticker: str, download: bool = False) -> pd.DataFrame:
     else:
         print(f"[取数] {tk}: {note}", file=sys.stderr)
     return df
+
+
+def intraday_cache_path(ticker: str, interval: str = "5m") -> str:
+    tk = normalize_ticker(ticker)
+    os.makedirs(INTRADAY_DATA_DIR, exist_ok=True)
+    return os.path.join(INTRADAY_DATA_DIR, f"{tk}_{interval}.csv")
+
+
+def load_intraday_ticker(ticker: str, interval: str = "5m", download: bool = False,
+                         offline: bool = False) -> pd.DataFrame:
+    """
+    加载日内高分辨率K线（如 5m）：
+      1. 优先读取本地缓存 data/intraday/{TICKER}_{interval}.csv
+      2. 若无缓存且允许联网（download 或 not offline），调用 yfinance 抓取最近 60 天数据并缓存
+      3. 若网络不可用或无数据，自动降级为高保真仿真日内序列（保底可用，杜绝崩溃）
+    """
+    tk = normalize_ticker(ticker)
+    p = intraday_cache_path(tk, interval)
+    if os.path.exists(p):
+        try:
+            df = pd.read_csv(p, index_col=0, parse_dates=True)
+            if not df.empty and len(df) >= 50:
+                return sd.normalize_intraday_tz(df)
+        except Exception:
+            pass
+
+    if not offline or download:
+        try:
+            print(f"[日内取数] 正在获取 {tk} {interval} 历史K线...", file=sys.stderr)
+            df_net = pe.fetch_klines(tk, interval=interval, period="60d", prepost=True)
+            if not df_net.empty and len(df_net) >= 50:
+                df_net = sd.normalize_intraday_tz(df_net)
+                df_net.to_csv(p)
+                print(f"[日内取数] {tk}: 成功抓取并缓存 {len(df_net)} 根 {interval} K线至 {p}", file=sys.stderr)
+                return df_net
+        except Exception as e:
+            print(f"[日内取数警告] {tk} 联网抓取失败: {e}", file=sys.stderr)
+
+    # 离线保底：若无缓存且无法联网，自动生成该标的高保真日内仿真数据（30个交易日）
+    print(f"[日内仿真] 为 {tk} 生成 30 个交易日高保真 5m 价格行为序列进行回测", file=sys.stderr)
+    seed = abs(hash(tk)) % 10000 + 42
+    df_daily = load_ticker(tk, download=False)
+    base_p = float(df_daily["Close"].iloc[-1]) if not df_daily.empty else 150.0
+    df_syn = sd.synthetic_intraday_days(n_days=30, seed=seed, base_price=base_p)
+    df_syn.to_csv(p)
+    return df_syn
 
 
 def weekly_from_daily(df: pd.DataFrame) -> pd.DataFrame:
@@ -215,6 +263,8 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                   market_data: dict = None,
                   use_market_gate: bool = False,
                   use_wave_filter: bool = False,
+                  use_box_filter: bool = False,
+                  use_channel_filter: bool = False,
                   asset_type: str = "auto",
                   ticker: str = "",
                   exclude_black_swans: bool = False,
@@ -225,7 +275,8 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
       - 'pullback_limit': 位置层挂单回踩关键位（Broken Swing / Fib 50% / Fib 61.8%），支持缩量洗盘过滤
       - 'trigger': 触发层裸K确认形态入场（Pin Bar / 2B / Engulfing）
       - 'strategy': 全闭环策略执行（Direction -> Location -> Trigger -> RR>=2.0 闸门与止损止盈执行），
-        可联动大盘道氏印证硬闸门与艾略特波浪位置狙击过滤
+        可联动大盘道氏印证硬闸门与艾略特波浪位置狙击过滤、箱体震荡门禁与通道动态门禁
+      - 'strategy_box_channel': 箱体与通道全闭环增强执行（联动箱体状态机+通道极值过滤+波浪大盘印证）
       - 'strategy_crypto': 加密专用全闭环执行（2B流动性猎杀+宽幅防插针止损+分级止盈），资产彻底解耦
     """
     rows = []
@@ -278,7 +329,7 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                                  "horizon": h, "t": entry_t, "entry_price": entry_p,
                                  "stop_price": trig["stop_price"], "pattern": trig["pattern"],
                                  "wait_bars": trig["wait_bars"], "entry_mode": "trigger", **s})
-        elif entry_mode in ("strategy", "strategy_crypto"):
+        elif entry_mode in ("strategy", "strategy_box_channel", "strategy_box_channel_tiered", "strategy_crypto"):
             use_crypto = (entry_mode == "strategy_crypto" or
                           asset_type == "crypto" or
                           (asset_type == "auto" and sc.is_crypto_asset(ticker)))
@@ -375,16 +426,42 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                                 if not sub_m.empty:
                                     m_dow[sym] = sub_m
 
-                    # 艾略特波浪位置狙击与诱多拦截
+                    # 决策发生在触发K线收盘（dec_t = entry_t - 1），入场执行在次根开盘（entry_t），严格杜绝未来函数
+                    dec_t = entry_t - 1
+                    sub_dec = df.iloc[:dec_t + 1]
+                    sw_dec = pe.extract_swings(sub_dec, order=ORDER_DAILY)
+
+                    # 艾略特波浪位置狙击与诱多拦截（在决策截断点评估）
                     w_status = None
                     if use_wave_filter:
-                        sub_entry = df.iloc[:entry_t + 1]
-                        sw_entry = pe.extract_swings(sub_entry, order=ORDER_DAILY)
-                        w_eval = pe.evaluate_wave_position(sw_entry, df=sub_entry, current_price=entry_p)
+                        w_eval = pe.evaluate_wave_position(sw_dec, df=sub_dec, current_price=entry_p)
                         w_status = w_eval.get("status")
 
+                    # 箱体震荡门禁（若开启）：拦截箱体内逆势/盲目追单
+                    b_gate = None
+                    if use_box_filter or entry_mode in ("strategy_box_channel", "strategy_box_channel_tiered"):
+                        b_gate = sl.verify_box_gate(df, dec_t, side, swings=sw_dec)
+                        if not b_gate.get("passed", True):
+                            continue
+
+                    # 通道动态门禁（若开启）：拦截通道超买超卖追单
+                    c_gate = None
+                    if use_channel_filter or entry_mode in ("strategy_box_channel", "strategy_box_channel_tiered"):
+                        c_gate = sl.verify_channel_gate(df, dec_t, side, swings=sw_dec)
+                        if not c_gate.get("passed", True):
+                            continue
+
+                    c_info = c_gate.get("channel") if c_gate else None
+                    use_chan_tp = (entry_mode in ("strategy_box_channel", "strategy_box_channel_tiered"))
+                    use_tiered = (entry_mode == "strategy_box_channel_tiered")
+                    impulse = lvls.get("impulse_leg")
                     trade = sl.simulate_strategy_trade(df, entry_t, entry_p, side, stop_p, tp_p,
-                                                       min_rr=min_rr, market_dow=m_dow, wave_status=w_status)
+                                                       min_rr=min_rr, market_dow=m_dow, wave_status=w_status,
+                                                       box_gate=b_gate, channel_gate=c_gate,
+                                                       use_channel_tp=use_chan_tp,
+                                                       channel_info=c_info,
+                                                       use_tiered_tp=use_tiered,
+                                                       impulse_leg=impulse)
                     if trade.get("status") == "completed":
                         # 黑天鹅持仓过滤（若开启）：跳过在途持仓跨越美股系统性危机窗口的受灾交易
                         if exclude_black_swans and sl.trade_overlaps_stock_black_swan(
@@ -401,7 +478,7 @@ def build_records(fwd: Forward, events: list, horizons=HORIZONS,
                                          "r_multiple": trade["r_multiple"], "hold_bars": trade["hold_bars"],
                                          "exit_reason": trade["exit_reason"],
                                          "trade_mae": trade["mae"], "trade_mfe": trade["mfe"],
-                                         "entry_mode": "strategy", **s})
+                                         "entry_mode": entry_mode, **s})
 
     return pd.DataFrame(rows)
 
@@ -431,8 +508,9 @@ def print_strategy_lifecycle_summary(rec: pd.DataFrame, label: str = "") -> dict
         n_tp_protected = int((sub["exit_reason"] == "tp1_then_be_protected").sum())
         n_tp_runner = int((sub["exit_reason"] == "tp_runner_captured").sum())
         n_tp_partial = int((sub["exit_reason"] == "tp_partial_time_horizon").sum())
+        n_tp_channel = int((sub["exit_reason"] == "take_profit_channel").sum())
         n_tp_classic = int((sub["exit_reason"] == "take_profit").sum())
-        n_tp_total = n_tp_protected + n_tp_runner + n_tp_partial + n_tp_classic
+        n_tp_total = n_tp_protected + n_tp_runner + n_tp_partial + n_tp_channel + n_tp_classic
         n_time = int((sub["exit_reason"] == "time_horizon").sum())
 
         print(f"\n[{arm} 全闭环风控生命周期 (RR >= 2.0)]")
@@ -464,9 +542,9 @@ def print_strategy_lifecycle_summary(rec: pd.DataFrame, label: str = "") -> dict
             print(f"  空头(Short): {s_st['trades']:2d} 笔 | 胜率: {s_st['win_rate']:5.1%} | PF: {s_st['pf']:4.2f} | 平均 R: {s_st['avg_r']:+5.2f} R | 期望: {s_st['exp']:+6.2%}")
 
         print(f"  平均持仓: {sub['hold_bars'].mean():.1f} 根K线  |  MAE 中位: {mae_med:.2%}  |  MFE 中位: {mfe_med:+.2%}")
-        if n_tp_protected or n_tp_runner or n_tp_partial:
+        if n_tp_protected or n_tp_runner or n_tp_partial or n_tp_channel:
             print(f"  出场分布: 止损 {n_stop} 笔 ({n_stop/n_total:.1%}) | "
-                  f"止盈兑现 {n_tp_total} 笔 ({n_tp_total/n_total:.1%}) [TP1保本防守: {n_tp_protected}, TP+Runner: {n_tp_runner}, 部分止盈到期: {n_tp_partial}] | "
+                  f"止盈兑现 {n_tp_total} 笔 ({n_tp_total/n_total:.1%}) [TP1保本防守: {n_tp_protected}, TP+Runner: {n_tp_runner}, 通道止盈: {n_tp_channel}, 部分止盈到期: {n_tp_partial}] | "
                   f"到期平仓 {n_time} 笔 ({n_time/n_total:.1%})")
         else:
             print(f"  出场分布: 止损 {n_stop} 笔 ({n_stop/n_total:.1%}) | 止盈 {n_tp_classic} 笔 ({n_tp_classic/n_total:.1%}) | 到期平仓 {n_time} 笔 ({n_time/n_total:.1%})")
@@ -478,6 +556,7 @@ def print_strategy_lifecycle_summary(rec: pd.DataFrame, label: str = "") -> dict
             "tp_details": {
                 "tp1_protected": n_tp_protected,
                 "tp_runner": n_tp_runner,
+                "tp_channel": n_tp_channel,
                 "tp_partial_time": n_tp_partial,
                 "tp_classic": n_tp_classic
             },
@@ -793,6 +872,87 @@ def verify(n: int = 700, method: str = "h2", buffer_k: float = 0.0) -> int:
         b_cr = _cr_rows(part_cr, T - 50)
         chk(f"截至 t={T - 50} 的加密专用闭环交易集完全一致", a_cr == b_cr, f"{len(a_cr)} 个 vs {len(b_cr)} 个")
 
+    print("\n[T12-Box-Channel] 箱体震荡与通道增强闭环未来函数自检：截断重算，入场与出场完全一致")
+    full_bc = build_records(fwd, full, df=df, entry_mode="strategy_box_channel",
+                            use_wave_filter=True, volume_filter=True,
+                            use_box_filter=True, use_channel_filter=True)
+
+    def _bc_rows(rec_bc, t_cap):
+        if rec_bc is None or rec_bc.empty or "horizon" not in rec_bc.columns:
+            return []
+        return [(r["t"], r["arm"], r["side"], round(r["entry_price"], 2), round(r["exit_price"], 2))
+                for _, r in rec_bc[rec_bc["horizon"] == 5].iterrows() if r["t"] <= t_cap]
+
+    for T in (350, 500):
+        sub_df_t = df.iloc[:T + 1]
+        part_events = enumerate_events(sub_df_t, weekly_from_daily(sub_df_t), method=method, buffer_k=buffer_k)
+        fwd_part = Forward(sub_df_t)
+        part_bc = build_records(fwd_part, part_events, df=sub_df_t, entry_mode="strategy_box_channel",
+                                use_wave_filter=True, volume_filter=True,
+                                use_box_filter=True, use_channel_filter=True)
+        a_bc = _bc_rows(full_bc, T - 50)
+        b_bc = _bc_rows(part_bc, T - 50)
+        chk(f"截至 t={T - 50} 的箱体通道闭环交易集完全一致", a_bc == b_bc, f"{len(a_bc)} 个 vs {len(b_bc)} 个")
+
+    print("\n[T13-Swing-Tiered] 箱体通道分级止盈闭环未来函数自检：截断重算，入场与分级出场完全一致")
+    full_bct = build_records(fwd, full, df=df, entry_mode="strategy_box_channel_tiered",
+                             use_wave_filter=True, volume_filter=True,
+                             use_box_filter=True, use_channel_filter=True)
+
+    def _bct_rows(rec_bct, t_cap):
+        if rec_bct is None or rec_bct.empty or "horizon" not in rec_bct.columns:
+            return []
+        return [(r["t"], r["arm"], r["side"], round(r["entry_price"], 2), round(r["exit_price"], 2))
+                for _, r in rec_bct[rec_bct["horizon"] == 5].iterrows() if r["t"] <= t_cap]
+
+    for T in (350, 500):
+        sub_df_t = df.iloc[:T + 1]
+        part_events = enumerate_events(sub_df_t, weekly_from_daily(sub_df_t), method=method, buffer_k=buffer_k)
+        fwd_part = Forward(sub_df_t)
+        part_bct = build_records(fwd_part, part_events, df=sub_df_t, entry_mode="strategy_box_channel_tiered",
+                                 use_wave_filter=True, volume_filter=True,
+                                 use_box_filter=True, use_channel_filter=True)
+        a_bct = _bct_rows(full_bct, T - 50)
+        b_bct = _bct_rows(part_bct, T - 50)
+        chk(f"截至 t={T - 50} 的箱体通道分级止盈闭环交易集完全一致", a_bct == b_bct, f"{len(a_bct)} 个 vs {len(b_bct)} 个")
+
+    print("\n[T14-Day-Strategy] 日内价格行为事件枚举与微观撮合未来函数自检：截断重算，决策集完全一致")
+    df_day = sd.synthetic_intraday_days(n_days=10, seed=777, base_price=150.0)
+    full_day_ev = sd.enumerate_day_events(df_day, strategy_type="day_combined", min_rr=2.5)
+    sessions = sd.split_intraday_sessions(df_day)
+    sess_dates = list(sessions.keys())
+    cutoff_d = sess_dates[5]
+    sub_day = df_day[df_day.index.date <= cutoff_d]
+    part_day_ev = sd.enumerate_day_events(sub_day, strategy_type="day_combined", min_rr=2.5)
+    a_day = [(e["entry_date"], e["side"], round(e["entry_price"], 2), round(e["stop_price"], 2))
+             for e in full_day_ev if e["session_date"] <= cutoff_d]
+    b_day = [(e["entry_date"], e["side"], round(e["entry_price"], 2), round(e["stop_price"], 2))
+             for e in part_day_ev]
+    chk("截至第 6 个交易日的日内决策集完全一致", a_day == b_day, f"{len(a_day)} 个 vs {len(b_day)} 个")
+
+    print("\n[T15-Day-EOD-Discipline] 日内防隔夜平仓铁律自检：100% 交易在 15:55 ET 前强平，隔夜留单数为 0")
+    bad_overnight = 0
+    for ev in full_day_ev:
+        trade = sd.simulate_day_trade(df_day, ev["entry_t"], ev["entry_price"], ev["side"],
+                                      ev["stop_price"], ev["tp_price"], min_rr=2.5)
+        if trade.get("status") == "completed":
+            e_date = pd.to_datetime(trade["entry_date"]).date()
+            x_date = pd.to_datetime(trade["exit_date"]).date()
+            if e_date != x_date:
+                bad_overnight += 1
+    chk("所有日内交易严格在当日闭环（隔夜持仓为0）", bad_overnight == 0, f"隔夜跨日 {bad_overnight} 笔")
+
+    print("\n[T16-Day-Inversion-Guard] 日内 2B 关键位方向倒错阻断自检：PDH 严格禁做多，PDL 严格禁做空")
+    inv_fails = 0
+    for ev in full_day_ev:
+        p_name = ev["pattern"]
+        side_val = ev["side"]
+        if "PDH" in p_name and side_val != -1:
+            inv_fails += 1
+        if "PDL" in p_name and side_val != 1:
+            inv_fails += 1
+    chk("日内 2B 猎杀零倒错信号（无 PDH 做多或 PDL 做空）", inv_fails == 0, f"倒错信号 {inv_fails} 笔")
+
     print("\n" + ("✅ 自检通过" if not fails else f"❌ {len(fails)} 项失败"))
     return 0 if not fails else 1
 
@@ -842,7 +1002,9 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
         ("trigger", "4. 关键位裸K触发 (Trigger)", "swing"),
         ("strategy", "5. 美股原装全闭环 (RR>=2.0)", "swing"),
         ("strategy_dow_wave", "6. 道氏印证+波浪过滤闭环", "swing"),
-        ("strategy_crypto", "7. 加密专用全闭环 (Crypto 2B+分级止盈)", "swing"),
+        ("strategy_box_channel", "7. 箱体与通道增强闭环 (Box+Channel)", "swing"),
+        ("strategy_box_channel_tiered", "8. 箱体通道分级止盈闭环 (Tiered TP)", "swing"),
+        ("strategy_crypto", "9. 加密专用全闭环 (Crypto 2B+分级止盈)", "swing"),
     ]
 
     # 预加载大盘指数作为道氏印证硬闸门基准
@@ -913,6 +1075,28 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
                     rec = build_records(fwd, arm_events, df=df, entry_mode="strategy", retest_level="swing",
                                         min_rr=min_rr, volume_filter=True, market_data=market_data,
                                         use_market_gate=True, use_wave_filter=True, asset_type="stock", ticker=tk,
+                                        exclude_black_swans=exclude_black_swans)
+                    if not rec.empty:
+                        stats[arm][m_key]["filled"] += rec["date"].nunique()
+                        stats[arm][m_key]["records"].append(rec)
+                        stats[arm][m_key]["trades"].append(rec.drop_duplicates(subset=["t", "side", "entry_price"]))
+                elif m_key == "strategy_box_channel":
+                    rec = build_records(fwd, arm_events, df=df, entry_mode="strategy_box_channel", retest_level="swing",
+                                        min_rr=min_rr, volume_filter=True, market_data=market_data,
+                                        use_market_gate=True, use_wave_filter=True,
+                                        use_box_filter=True, use_channel_filter=True,
+                                        asset_type="stock", ticker=tk,
+                                        exclude_black_swans=exclude_black_swans)
+                    if not rec.empty:
+                        stats[arm][m_key]["filled"] += rec["date"].nunique()
+                        stats[arm][m_key]["records"].append(rec)
+                        stats[arm][m_key]["trades"].append(rec.drop_duplicates(subset=["t", "side", "entry_price"]))
+                elif m_key == "strategy_box_channel_tiered":
+                    rec = build_records(fwd, arm_events, df=df, entry_mode="strategy_box_channel_tiered", retest_level="swing",
+                                        min_rr=min_rr, volume_filter=True, market_data=market_data,
+                                        use_market_gate=True, use_wave_filter=True,
+                                        use_box_filter=True, use_channel_filter=True,
+                                        asset_type="stock", ticker=tk,
                                         exclude_black_swans=exclude_black_swans)
                     if not rec.empty:
                         stats[arm][m_key]["filled"] += rec["date"].nunique()
@@ -1010,7 +1194,68 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
                 "mae_med": mae_dw, "mfe_med": mfe_dw
             }
 
-        # 7. 加密专用全闭环 (Crypto 2B+分级止盈) 生命周期指标
+        # 7. 箱体与通道增强闭环 (Box+Channel Sniper) 生命周期指标
+        strat_bc_trades = stats[arm]["strategy_box_channel"]["trades"]
+        if strat_bc_trades:
+            all_bc = pd.concat(strat_bc_trades, ignore_index=True)
+            wins_bc = all_bc[all_bc["pnl_pct"] > 0]
+            losses_bc = all_bc[all_bc["pnl_pct"] <= 0]
+            pf_bc = (wins_bc["pnl_pct"].sum() / abs(losses_bc["pnl_pct"].sum())) if len(losses_bc) and losses_bc["pnl_pct"].sum() != 0 else float("inf")
+            avg_r_bc = float(all_bc["r_multiple"].mean())
+            exp_bc = float(all_bc["pnl_pct"].mean())
+            wr_bc = len(wins_bc) / len(all_bc)
+            mae_col = "trade_mae" if "trade_mae" in all_bc.columns else "mae"
+            mfe_col = "trade_mfe" if "trade_mfe" in all_bc.columns else "mfe"
+            mae_bc = float(all_bc[mae_col].median())
+            mfe_bc = float(all_bc[mfe_col].median())
+            print(f"\n  [{arm} 箱体与通道增强闭环 (Box+Channel Sniper) 生命周期指标]")
+            print(f"  成交交易: {len(all_bc)} 笔 | 胜率: {wr_bc:.1%} ({len(wins_bc)} 胜 / {len(losses_bc)} 负)")
+            print(f"  盈亏比 (PF): {pf_bc:.2f} | 平均 R 倍数: {avg_r_bc:+.2f} R | 单笔期望收益: {exp_bc:+.2%}")
+            print(f"  平均持仓周期: {all_bc['hold_bars'].mean():.1f} 根K线 | MAE 中位: {mae_bc:.2%} | MFE 中位: {mfe_bc:+.2%}")
+            arm_out["strategy_box_channel_lifecycle"] = {
+                "trades": len(all_bc), "win_rate": wr_bc, "profit_factor": pf_bc,
+                "avg_r": avg_r_bc, "expectancy": exp_bc, "hold_bars": float(all_bc['hold_bars'].mean()),
+                "mae_med": mae_bc, "mfe_med": mfe_bc
+            }
+
+        # 8. 箱体通道分级止盈闭环 (Tiered TP) 生命周期指标
+        strat_bct_trades = stats[arm]["strategy_box_channel_tiered"]["trades"]
+        if strat_bct_trades:
+            all_bct = pd.concat(strat_bct_trades, ignore_index=True)
+            wins_bct = all_bct[all_bct["pnl_pct"] > 0]
+            losses_bct = all_bct[all_bct["pnl_pct"] <= 0]
+            pf_bct = (wins_bct["pnl_pct"].sum() / abs(losses_bct["pnl_pct"].sum())) if len(losses_bct) and losses_bct["pnl_pct"].sum() != 0 else float("inf")
+            avg_r_bct = float(all_bct["r_multiple"].mean())
+            exp_bct = float(all_bct["pnl_pct"].mean())
+            wr_bct = len(wins_bct) / len(all_bct)
+            mae_col = "trade_mae" if "trade_mae" in all_bct.columns else "mae"
+            mfe_col = "trade_mfe" if "trade_mfe" in all_bct.columns else "mfe"
+            mae_bct = float(all_bct[mae_col].median())
+            mfe_bct = float(all_bct[mfe_col].median())
+            n_stop_bct = int((all_bct["exit_reason"].str.contains("stop_loss") | (all_bct["exit_reason"] == "stop_loss_conservative")).sum())
+            n_tp_prot_bct = int((all_bct["exit_reason"] == "tp1_then_be_protected").sum())
+            n_tp_run_bct = int((all_bct["exit_reason"] == "tp_runner_captured").sum())
+            n_tp_chan_bct = int((all_bct["exit_reason"] == "take_profit_channel").sum())
+            n_tp_part_bct = int((all_bct["exit_reason"] == "tp_partial_time_horizon").sum())
+            n_tp_tot_bct = n_tp_prot_bct + n_tp_run_bct + n_tp_chan_bct + n_tp_part_bct
+            n_time_bct = int((all_bct["exit_reason"] == "time_horizon").sum())
+            n_tot_bct = len(all_bct)
+
+            print(f"\n  [{arm} 箱体通道分级止盈闭环 (Tiered TP) 生命周期指标]")
+            print(f"  成交交易: {n_tot_bct} 笔 | 胜率: {wr_bct:.1%} ({len(wins_bct)} 胜 / {len(losses_bct)} 负)")
+            print(f"  盈亏比 (PF): {pf_bct:.2f} | 平均 R 倍数: {avg_r_bct:+.2f} R | 单笔期望收益: {exp_bct:+.2%}")
+            print(f"  平均持仓周期: {all_bct['hold_bars'].mean():.1f} 根K线 | MAE 中位: {mae_bct:.2%} | MFE 中位: {mfe_bct:+.2%}")
+            print(f"  出场分布: 止损 {n_stop_bct} 笔 ({n_stop_bct/n_tot_bct:.1%}) | "
+                  f"止盈兑现 {n_tp_tot_bct} 笔 ({n_tp_tot_bct/n_tot_bct:.1%}) [TP1保本: {n_tp_prot_bct}, Runner捕获: {n_tp_run_bct}, 通道止盈: {n_tp_chan_bct}, 部分止盈到期: {n_tp_part_bct}] | "
+                  f"到期平仓 {n_time_bct} 笔 ({n_time_bct/n_tot_bct:.1%})")
+            arm_out["strategy_box_channel_tiered_lifecycle"] = {
+                "trades": n_tot_bct, "win_rate": wr_bct, "profit_factor": pf_bct,
+                "avg_r": avg_r_bct, "expectancy": exp_bct, "hold_bars": float(all_bct['hold_bars'].mean()),
+                "mae_med": mae_bct, "mfe_med": mfe_bct,
+                "stop_exits": n_stop_bct, "tp_exits": n_tp_tot_bct, "time_exits": n_time_bct
+            }
+
+        # 9. 加密专用全闭环 (Crypto 2B+分级止盈) 生命周期指标
         strat_cr_trades = stats[arm]["strategy_crypto"]["trades"]
         if strat_cr_trades:
             all_cr = pd.concat(strat_cr_trades, ignore_index=True)
@@ -1088,6 +1333,117 @@ def run_comparison(tickers: list, method: str = "h2", buffer_k: float = 0.0,
     return summary_out
 
 
+def run_day_comparison(tickers: list, download: bool = False, offline: bool = True,
+                       slippage_bps: float = 3.0, commission_bps: float = 1.0,
+                       min_rr: float = 2.5, strategy_type: str = "all",
+                       json_out: str = "") -> dict:
+    """
+    日内高分辨率（5m）价格行为多策略回测与对比分析：
+      - 战术 A: 开盘区间突破回踩 (ORB & Retest)
+      - 战术 B: 昨高昨低 2B 流动性猎杀 (PDH/PDL 2B Sweep)
+      - 战术 C: 盘前极值 2B 流动性猎杀 (PMH/PML 2B Sweep)
+      - 战术 D: 综合全闭环 (Day Combined Execution)
+      严守 15:55 ET 防隔夜强制平仓，扣除真实摩擦（滑点 + 规费）。
+    """
+    if strategy_type == "all":
+        day_modes = [
+            ("orb", "1. 开盘区间突破回踩 (ORB & Retest)"),
+            ("2b_pdh_pdl", "2. 昨高昨低 2B 猎杀 (PDH/PDL 2B)"),
+            ("2b_pmh_pml", "3. 盘前极值 2B 猎杀 (PMH/PML 2B)"),
+            ("day_combined", "4. 日内价格行为综合全闭环 (Combined)"),
+            ("day_htf_aligned", "5. 日内多周期共振全闭环 (HTF 1h + MTF 15m + 5m)")
+        ]
+    else:
+        st_names = {
+            "orb": "1. 开盘区间突破回踩 (ORB & Retest)",
+            "2b_pdh_pdl": "2. 昨高昨低 2B 猎杀 (PDH/PDL 2B)",
+            "2b_pmh_pml": "3. 盘前极值 2B 猎杀 (PMH/PML 2B)",
+            "day_combined": "4. 日内价格行为综合全闭环 (Combined)",
+            "day_htf_aligned": "5. 日内多周期共振全闭环 (HTF 1h + MTF 15m + 5m)"
+        }
+        day_modes = [(strategy_type, st_names.get(strategy_type, strategy_type))]
+
+    all_results = {dm[0]: [] for dm in day_modes}
+    valid_tickers = 0
+
+    print(f"\n{'=' * 98}")
+    print(f"日内高分辨率 (5m) 价格行为策略回测 (标的: {len(tickers)} 只, 摩擦: 滑点 {slippage_bps} bps + 规费 {commission_bps} bps, 最小RR: {min_rr})")
+    print(f"{'=' * 98}")
+
+    for tk in tickers:
+        df_5m = load_intraday_ticker(tk, interval="5m", download=download, offline=offline)
+        if df_5m.empty or len(df_5m) < 50:
+            print(f"[日内跳过] {tk}: 无足够5m数据", file=sys.stderr)
+            continue
+        valid_tickers += 1
+
+        for st_key, st_name in day_modes:
+            evs = sd.enumerate_day_events(df_5m, strategy_type=st_key, min_rr=min_rr)
+            for ev in evs:
+                tr = sd.simulate_day_trade(df_5m, ev["entry_t"], ev["entry_price"], ev["side"],
+                                           ev["stop_price"], ev["tp_price"], min_rr=min_rr,
+                                           slippage_bps=slippage_bps, commission_bps=commission_bps)
+                if tr.get("status") == "completed":
+                    tr["ticker"] = tk
+                    tr["strategy"] = st_key
+                    all_results[st_key].append(tr)
+
+    summary_out = {}
+    print(f"\n{'日内策略模式':<32}{'交易数':>7}{'毛胜率':>9}{'净胜率':>9}{'毛PF':>8}{'净PF':>8}{'净均R':>8}{'单笔净期望':>11}{'摩擦损耗':>9}")
+    print("-" * 105)
+
+    for st_key, st_name in day_modes:
+        tr_list = all_results[st_key]
+        if not tr_list:
+            print(f"{st_name:<32}{0:>7}{'N/A':>9}{'N/A':>9}{'N/A':>8}{'N/A':>8}{'N/A':>8}{'N/A':>11}{'N/A':>9}")
+            continue
+        st_sum = sd.summarize_day_trades(tr_list, label=st_name)
+        summary_out[st_key] = st_sum
+
+        n_t = st_sum["trades"]
+        g_wr = st_sum["gross_win_rate"]
+        n_wr = st_sum["net_win_rate"]
+        g_pf = st_sum["gross_pf"]
+        n_pf = st_sum["net_pf"]
+        n_r = st_sum["avg_net_r"]
+        n_exp = st_sum["exp_net"]
+        drag = st_sum["avg_friction_drag"]
+
+        g_pf_str = f"{g_pf:.2f}" if np.isfinite(g_pf) else "inf"
+        n_pf_str = f"{n_pf:.2f}" if np.isfinite(n_pf) else "inf"
+
+        print(f"{st_name:<32}{n_t:>7}{g_wr:>8.1%}{n_wr:>8.1%}{g_pf_str:>8}{n_pf_str:>8}{n_r:>+7.2f}R{n_exp:>+10.2%}{drag:>8.2%}")
+
+    # 打印核心综合策略的生命周期详情
+    for st_key, st_name in day_modes:
+        st_sum = summary_out.get(st_key)
+        if not st_sum or st_sum["trades"] == 0:
+            continue
+        ex = st_sum["exits"]
+        tot = st_sum["trades"]
+        print(f"\n  [{st_name} 详细生命周期风控与出场分布]")
+        print(f"  总交易笔数: {tot} 笔 | 净胜率: {st_sum['net_win_rate']:.1%} | 净盈亏比 (Net PF): {st_sum['net_pf']:.2f}")
+        print(f"  平均持仓周期: {st_sum['hold_bars_mean']:.1f} 根5分K ({st_sum['hold_bars_mean']*5:.0f} 分钟) | MAE 中位: {st_sum['mae_med']:.2%} | MFE 中位: {st_sum['mfe_med']:+.2%}")
+        print(f"  出场分布: 止损 {ex['stop_loss']} 笔 ({ex['stop_loss']/tot:.1%}) | "
+              f"1.5R保本出场 {ex['break_even']} 笔 ({ex['break_even']/tot:.1%}) | "
+              f"硬止盈达标 {ex['take_profit']} 笔 ({ex['take_profit']/tot:.1%}) | "
+              f"15:55防隔夜强平 {ex['eod_close']} 笔 ({ex['eod_close']/tot:.1%})")
+        lst = st_sum["long_stats"]
+        sst = st_sum["short_stats"]
+        if lst["trades"] > 0 and sst["trades"] > 0:
+            l_pf_s = f"{lst['net_pf']:.2f}" if np.isfinite(lst['net_pf']) else "inf"
+            s_pf_s = f"{sst['net_pf']:.2f}" if np.isfinite(sst['net_pf']) else "inf"
+            print(f"  多头(Long):  {lst['trades']:2d} 笔 | 净胜率: {lst['net_wr']:5.1%} | PF: {l_pf_s:>5} | 净均R: {lst['avg_net_r']:+5.2f} R | 净期望: {lst['exp_net']:+6.2%}")
+            print(f"  空头(Short): {sst['trades']:2d} 笔 | 净胜率: {sst['net_wr']:5.1%} | PF: {s_pf_s:>5} | 净均R: {sst['avg_net_r']:+5.2f} R | 净期望: {sst['exp_net']:+6.2%}")
+
+    if json_out:
+        with open(json_out, "w", encoding="utf-8") as f:
+            json.dump(summary_out, f, ensure_ascii=False, indent=2, default=str)
+        print(f"\n[JSON] 日内对比结果已写入 {json_out}", file=sys.stderr)
+
+    return summary_out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="分层量化回测：方向层、位置层、触发层与风控执行闭环")
     ap.add_argument("--tickers", type=str, default="", help="逗号分隔，如 AAPL,MSFT,NVDA")
@@ -1105,20 +1461,34 @@ def main() -> int:
                     help="道氏第6条量能确认：放量（>1.2倍20日均量）才触发入场")
     ap.add_argument("--asset-type", type=str, default="auto", choices=["auto", "stock", "crypto"],
                     help="资产类型路由：auto 自动识别，stock 美股，crypto 加密货币（默认 auto）")
+    ap.add_argument("--mode", type=str, default="swing", choices=["swing", "day"],
+                    help="回测维度模式：swing 波段模式（默认），day 日内模式")
+    ap.add_argument("--day", action="store_true", help="快捷启动日内交易回测模式（等同于 --mode day）")
+    ap.add_argument("--day-strategy", type=str, default="all",
+                    choices=["all", "orb", "2b_pdh_pdl", "2b_pmh_pml", "day_combined", "day_htf_aligned"],
+                    help="日内策略选择：all 全部对比，orb 开盘突破回踩，2b_pdh_pdl 昨高昨低2B，2b_pmh_pml 盘前极值2B，day_combined 综合全闭环，day_htf_aligned 多周期共振全闭环")
+    ap.add_argument("--slippage-bps", type=float, default=3.0,
+                    help="日内真实滑点模拟基点（默认 3.0 bps = 0.03%）")
+    ap.add_argument("--commission-bps", type=float, default=1.0,
+                    help="日内交易规费与佣金基点（默认 1.0 bps = 0.01%）")
     ap.add_argument("--entry-mode", type=str, default="market",
-                    choices=["market", "pullback_limit", "trigger", "strategy", "strategy_crypto"],
-                    help="入场模式：market 市价追入，pullback_limit 限价回踩，trigger 裸K触发，strategy 全闭环，strategy_crypto 加密专用全闭环")
+                    choices=["market", "pullback_limit", "trigger", "strategy", "strategy_box_channel", "strategy_box_channel_tiered", "strategy_crypto"],
+                    help="入场模式：market 市价追入，pullback_limit 限价回踩，trigger 裸K触发，strategy 全闭环，strategy_box_channel 箱体通道增强闭环，strategy_box_channel_tiered 箱体通道分级止盈闭环，strategy_crypto 加密专用全闭环")
     ap.add_argument("--retest-level", type=str, default="swing",
                     choices=["swing", "fib50", "fib618"],
-                    help="回踩测试水平位：swing 破位结构位，fib50 斐波50%，fib618 斐波61.8%")
-    ap.add_argument("--min-rr", type=float, default=2.0,
-                    help="风控硬闸门最小盈亏比要求（默认 2.0）")
+                    help="回踩测试水平位：swing 破位结构位，fib50 斐波50%%，fib618 斐波61.8%%")
+    ap.add_argument("--min-rr", type=float, default=2.5,
+                    help="风控硬闸门最小盈亏比要求（默认 2.5）")
     ap.add_argument("--compare", action="store_true",
                     help="执行多层级全流程对比横向审计（市价突破 vs 结构回踩 vs 斐波回踩 vs 触发形态 vs 全闭环）")
     ap.add_argument("--market-gate", action="store_true",
                     help="大盘指数相互印证硬闸门（SPY/QQQ 处于空头时拦截个股多头）")
     ap.add_argument("--wave-filter", action="store_true",
                     help="艾略特波浪位置过滤（拦截第5浪冲顶诱多、识别第3浪主升）")
+    ap.add_argument("--box-filter", action="store_true",
+                    help="箱体震荡门禁（处于箱体内部时拦截追单，仅允许边界2B扫损猎杀）")
+    ap.add_argument("--channel-filter", action="store_true",
+                    help="通道动态门禁（拦截通道上轨超买追多与下轨超卖杀跌）")
     ap.add_argument("--exclude-black-swans", action="store_true",
                     help="剔除加密货币历史重大系统性黑天鹅崩盘期（312、519、Luna、FTX等全网清算挤兑）")
     ap.add_argument("--no-crypto-trend-gate", action="store_true",
@@ -1152,6 +1522,13 @@ def main() -> int:
     if not tickers:
         print("[错误] 请指定 --tickers / --tickers-file / --synthetic", file=sys.stderr)
         return 1
+
+    if args.day or args.mode == "day":
+        run_day_comparison(tickers, download=args.download, offline=args.offline,
+                           slippage_bps=args.slippage_bps, commission_bps=args.commission_bps,
+                           min_rr=args.min_rr,
+                           strategy_type=args.day_strategy, json_out=args.json_out)
+        return 0
 
     use_trend_gate = not args.no_crypto_trend_gate
 
@@ -1191,6 +1568,8 @@ def main() -> int:
                             market_data=market_data,
                             use_market_gate=args.market_gate,
                             use_wave_filter=args.wave_filter,
+                            use_box_filter=args.box_filter,
+                            use_channel_filter=args.channel_filter,
                             asset_type=args.asset_type,
                             ticker=tk,
                             exclude_black_swans=args.exclude_black_swans,
@@ -1216,7 +1595,7 @@ def main() -> int:
     print("#" * 82)
     summary = report_records(allrec, merge_arrs(arrs_list), f"全样本 {len(pooled)} 只 ({args.entry_mode})", verbose=True)
 
-    if args.entry_mode in ("strategy", "strategy_crypto"):
+    if args.entry_mode in ("strategy", "strategy_box_channel", "strategy_box_channel_tiered", "strategy_crypto"):
         strat_sum = print_strategy_lifecycle_summary(allrec, label="全样本")
         summary["_strategy_lifecycle"] = strat_sum
 

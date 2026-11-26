@@ -31,7 +31,7 @@ import pa_engine as pe
 # 加密策略核心配置参数
 CRYPTO_STOP_BUFFER_K = 1.4       # 常规结构止损缓冲 (1.3 ~ 1.5x ATR/bar_rng)
 CRYPTO_2B_STOP_BUFFER_K = 0.35   # 2B 扫损极值针尖外缓冲 (0.3 ~ 0.5x ATR/bar_rng)
-CRYPTO_MIN_RR = 2.0             # 最小风险报酬比硬闸门
+CRYPTO_MIN_RR = 2.5             # 最小风险报酬比硬闸门
 CRYPTO_MAX_WAIT_BARS = 15       # 突破后最大等待回踩触发根数
 CRYPTO_MAX_HOLD_BARS = 60       # 最大持仓跟踪周期 (加密顺势主升波段较长)
 

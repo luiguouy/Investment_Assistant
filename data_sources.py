@@ -64,6 +64,13 @@ def check_continuity(df: pd.DataFrame) -> tuple:
 # 0. 传输层：urllib 优先，连接层失败退 curl
 # ==============================================================================
 
+# 确保国内金融数据接口直连，规避本地代理的 SSL 握手阻断与空包
+_DOMESTIC_HOSTS = "eastmoney.com,push2his.eastmoney.com,sina.com.cn,gtimg.cn,ifzq.gtimg.cn"
+_existing_no_proxy = os.environ.get("no_proxy", "")
+if not any(h in _existing_no_proxy for h in ["eastmoney.com", "gtimg.cn"]):
+    os.environ["no_proxy"] = f"{_existing_no_proxy},{_DOMESTIC_HOSTS}".strip(",")
+
+
 def http_get(url: str, timeout: int = 20):
     """返回 (text 或 None, meta)。meta 含 transport / status / error。"""
     try:
@@ -75,8 +82,9 @@ def http_get(url: str, timeout: int = 20):
         err1 = f"{type(e1).__name__}"
 
     try:
+        cmd = ["curl", "-s", "-m", str(timeout), "--noproxy", _DOMESTIC_HOSTS, "-A", UA, "-w", "\n__ST__%{http_code}", url]
         out = subprocess.run(
-            ["curl", "-s", "-m", str(timeout), "-A", UA, "-w", "\n__ST__%{http_code}", url],
+            cmd,
             capture_output=True, timeout=timeout + 15)
         txt = out.stdout.decode("utf-8", "ignore")
         status = 0
@@ -247,7 +255,7 @@ class OKXSource(Source):
 class EastmoneySource(Source):
     """东方财富：前复权日线。secid 前缀 105=纳斯达克 / 106=纽交所 / 107=美交所"""
     def accepts(self, ticker: str) -> bool:
-        return ticker.upper() not in OKXSource.INST
+        return ticker.upper() not in OKXSource.INST and not ticker.upper().endswith("-USD")
 
     name = "eastmoney"
 
@@ -317,7 +325,7 @@ class TencentSource(Source):
     美股代码需带交易所后缀：.OQ 纳斯达克 / .N 纽交所 / .A 美交所。
     """
     def accepts(self, ticker: str) -> bool:
-        return ticker.upper() not in OKXSource.INST
+        return ticker.upper() not in OKXSource.INST and not ticker.upper().endswith("-USD")
 
     name = "tencent"
     SUFFIXES = [".OQ", ".N", ".A"]
@@ -408,7 +416,7 @@ class SinaSource(Source):
     name = "sina"
 
     def accepts(self, ticker: str) -> bool:
-        return ticker.upper() not in OKXSource.INST
+        return ticker.upper() not in OKXSource.INST and not ticker.upper().endswith("-USD")
 
     def fetch(self, ticker: str, bars: int) -> pd.DataFrame:
         url = ("https://stock.finance.sina.com.cn/usstock/api/json_v2.php/"
@@ -544,15 +552,22 @@ def write_cache(ticker: str, df: pd.DataFrame, source: str) -> None:
 
 
 def fetch_history(ticker: str, bars: int = 1600, allow_network: bool = True,
-                  sources: list = None) -> tuple:
+                  sources: list = None, force_update: bool = False,
+                  max_age_days: int = 5) -> tuple:
     """返回 (df, note)。note 说明数据来自哪里、为什么失败。"""
     ticker = ticker.upper()
-    df = read_cache(ticker)
-    if not df.empty and len(df) >= min(300, bars * 0.5):
-        return df, f"cache({len(df)} 根)"
+    cached = read_cache(ticker)
+    if not force_update and not cached.empty and len(cached) >= min(300, bars * 0.5):
+        if not allow_network:
+            return cached, f"cache({len(cached)} 根)"
+        last_ts = pd.Timestamp(cached.index[-1])
+        if last_ts.tzinfo is not None:
+            last_ts = last_ts.tz_localize(None)
+        if (pd.Timestamp.now() - last_ts).days <= max_age_days:
+            return cached, f"cache({len(cached)} 根)"
 
     if not allow_network:
-        return pd.DataFrame(), "无缓存且未允许联网"
+        return (cached, f"cache({len(cached)} 根)") if not cached.empty else (pd.DataFrame(), "无缓存且未允许联网")
 
     for src in (sources if sources is not None else SOURCES):
         inst = src() if isinstance(src, type) else src
@@ -563,29 +578,37 @@ def fetch_history(ticker: str, bars: int = 1600, allow_network: bool = True,
         except Exception as e:
             got = inst._fail(f"未捕获异常 {type(e).__name__}: {e}")
         if not got.empty:
-            ok, why = check_continuity(got)
+            if not cached.empty:
+                merged = pd.concat([cached, got])
+                final_df = merged[~merged.index.duplicated(keep="last")].sort_index()
+            else:
+                final_df = got
+            ok, why = check_continuity(final_df)
             if not ok:
                 # 不写入缓存，继续换下一个源
-                print(f"[警告] {inst.name} 的 {ticker} 被拒 -> {why}", file=sys.stderr)
+                print(f"[警告] {inst.name} 的 {ticker} 合并后校验被拒 -> {why}", file=sys.stderr)
                 inst.last_reason = why
                 time.sleep(THROTTLE)
                 continue
-            write_cache(ticker, got, f"{inst.name}/{inst.suffix.get(ticker, ticker)}"
+            write_cache(ticker, final_df, f"{inst.name}/{inst.suffix.get(ticker, ticker)}"
                        if hasattr(inst, "suffix") else f"{inst.name}/{ticker}")
-            return got, f"{inst.name}({len(got)} 根)"
+            action_desc = "更新至" if not cached.empty else "拉取"
+            return final_df, f"{inst.name}({action_desc} {len(final_df)} 根，止于 {final_df.index[-1].date()})"
         time.sleep(THROTTLE)
 
+    if not cached.empty:
+        return cached, f"全部网络源失败，保留旧缓存({len(cached)} 根)"
     return pd.DataFrame(), "全部数据源不可用"
 
 
-def fetch_many(tickers: list, bars: int = 1600) -> dict:
+def fetch_many(tickers: list, bars: int = 1600, force_update: bool = False) -> dict:
     srcs = [s() for s in SOURCES]
     report = {}
     for i, tk in enumerate(tickers, 1):
-        df, note = fetch_history(tk, bars=bars, allow_network=True, sources=srcs)
+        df, note = fetch_history(tk, bars=bars, allow_network=True, sources=srcs, force_update=force_update)
         report[tk] = {"ok": not df.empty, "bars": len(df), "note": note}
         flag = "OK " if not df.empty else "FAIL"
-        print(f"  [{i:>2}/{len(tickers)}] {flag} {tk:<6} {note}", file=sys.stderr)
+        print(f"  [{i:>2}/{len(tickers)}] {flag} {tk:<8} {note}", file=sys.stderr)
     print("\n数据源使用情况：", file=sys.stderr)
     for s in srcs:
         print(f"  {s.name:<10} 成功 {s.ok:>3} 次，连续失败 {s.fails} 次"
@@ -646,6 +669,8 @@ def main() -> int:
     ap.add_argument("--fetch-file", type=str, default="", help="每行一个标的")
     ap.add_argument("--bars", type=int, default=1600, help="目标根数（默认 1600 ≈ 6.4 年）")
     ap.add_argument("--status", action="store_true", help="查看缓存清单")
+    ap.add_argument("--update", "--force", dest="force_update", action="store_true",
+                    help="强制从网络拉取最新数据并增量合并到本地缓存")
     args = ap.parse_args()
 
     if args.probe:
@@ -665,7 +690,7 @@ def main() -> int:
         print("[错误] 请指定 --probe / --fetch / --fetch-file / --status", file=sys.stderr)
         return 1
 
-    rep = fetch_many(tickers, bars=args.bars)
+    rep = fetch_many(tickers, bars=args.bars, force_update=args.force_update)
     ok = sum(1 for v in rep.values() if v["ok"])
     print(f"\n成功 {ok}/{len(tickers)}")
     return 0 if ok else 1

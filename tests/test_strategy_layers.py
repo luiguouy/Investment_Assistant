@@ -291,5 +291,29 @@ class TestStrategyLayers(unittest.TestCase):
         # fib50 = 110 - 0.5 * (110 - 90) = 100.0
         self.assertEqual(lvls["fib50"], 100.0)
 
+    def test_simulate_strategy_trade_tiered(self):
+        """测试全闭环分级止盈生命周期：TP1 减半推保本防守 + Runner 捕获"""
+        idx = pd.bdate_range("2026-01-01", periods=6)
+        # entry=100.0, stop=90.0 (risk=10), tp1=120.0 (2R), tp2=135.0
+        # bar 0: entry at 100.0
+        # bar 1: High=122.0 (触发 TP1 120.0 减半，推保本 curr_stop=100.0), Low=102.0
+        # bar 2: Low=99.0 (回踩跌破 100.0 保本点) -> 保本防守出场
+        df_be = pd.DataFrame({
+            "Open":  [100.0, 105.0, 102.0, 98.0, 97.0, 96.0],
+            "High":  [101.0, 126.0, 103.0, 99.0, 98.0, 97.0],
+            "Low":   [99.0,  102.0, 99.0,  96.0, 95.0, 94.0],
+            "Close": [100.5, 121.0, 99.5,  97.0, 96.0, 95.0]
+        }, index=idx)
+
+        tr_be = sl.simulate_strategy_trade(df_be, 0, 100.0, side=1, stop_price=90.0, tp_price=125.0,
+                                          use_tiered_tp=True, tp2_price=140.0)
+        self.assertEqual(tr_be["status"], "completed")
+        self.assertEqual(tr_be["exit_reason"], "tp1_then_be_protected")
+        self.assertTrue(tr_be["win"])
+        # 50% * 125 + 50% * 100 = 112.5
+        self.assertAlmostEqual(tr_be["exit_price"], 112.5, places=1)
+        self.assertAlmostEqual(tr_be["pnl_pct"], 0.125, places=3)
+        self.assertAlmostEqual(tr_be["r_multiple"], 1.25, places=2)
+
 if __name__ == "__main__":
     unittest.main()

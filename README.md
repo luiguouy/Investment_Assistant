@@ -14,30 +14,30 @@ Investment_Assistant/
 ├── data/                    # 历史行情数据本地缓存与元数据
 │   ├── _meta.json           # 数据拉取留痕、来源与数据质量校验记录
 │   └── *.csv                # 日线 / 周线历史 K 线数据
-├── docs/                    # 策略理论规范与全周期实证研究报告
+├── docs/                    # 策略理论规范与核心设计文档
+│   ├── pitfalls_and_lessons_learned.md # 踩坑与避错实战经验总结库 (核心防错指南)
 │   ├── strategy_theory.md   # 核心交易理论体系与层级规范
 │   ├── strategy_crypto.md   # 加密资产专用策略研究与回测报告
-│   ├── backtest_protocol.md # H1 方向层预注册协议
-│   ├── backtest_protocol_v2.md # H2 结构突破预注册协议
-│   ├── backtest_result_v1.md   # H1 计数模式实证分析报告
-│   ├── backtest_result_v2.md   # H2 突破与放量确认实证报告
-│   ├── backtest_result_v3.md   # 四层级全闭环风控实证报告
-│   └── pa_engine_audit_2026-10-22.md # 早期价格行为引擎审计记录
-├── results/                 # 回测生成的结构化指标与执行日志
-│   ├── backtest_*.json      # 各轮次回测指标导出 (JSON 格式)
-│   └── backtest_*.log       # 完整回测控制台输出留痕
-├── tests/                   # 自动化单元测试与无未来函数自检套件
+│   └── box_and_channel_design.md # 箱体震荡与通道分析升级方案
+├── tests/                   # 自动化单元测试与端到端对抗强化套件 (100% PASS)
 │   ├── __init__.py          # 测试环境路径自适应引导
 │   ├── test_data_sources.py # 数据源离线解析与熔断机制测试
 │   ├── test_pa_engine_fixes.py # 价格行为引擎修复项回归测试
 │   ├── test_strategy_h2.py  # H2 结构突破与位移去重测试
 │   ├── test_strategy_layers.py # 位置层/触发层/风控闭环综合测试
 │   ├── test_strategy_crypto.py # 加密专用策略/2B扫损/分级止盈测试
-│   └── test_wave_dow_engine.py # 道氏相互印证与艾略特波浪位置测试
-├── backtest.py              # Walk-Forward 回测引擎与 T1~T11 数学验证
+│   ├── test_wave_dow_engine.py # 道氏相互印证与艾略特波浪位置测试
+│   ├── test_box_and_channel.py # 箱体状态机与动态残差通道测试
+│   ├── test_strategy_day.py # 日内 5m 价格行为与微观撮合测试
+│   ├── test_trend_gate_and_sector_decoupling.py # 200 EMA 顺势代理与多指数解耦测试
+│   ├── test_intraday_friction_and_short_gate.py # 日内 8 bps 真实摩擦与做空风控红线测试
+│   ├── test_e2e_requirements.py # R1~R4 端到端需求验收测试
+│   └── test_tier5_adversarial_hardening.py # Tier 5 极端对抗渗透与法医级反作弊测试
+├── backtest.py              # Walk-Forward 回测引擎与 T1~T16 零未来函数因果自检
 ├── data_sources.py          # 多源行情拉取、降级、连续性校验适配器
-├── pa_engine.py             # 价格行为学核心分析引擎 (Swing/Dow/MSS/Levels)
-├── strategy_layer.py        # 美股位置层挂单、触发层形态与执行层全闭环推演
+├── pa_engine.py             # 价格行为学核心分析引擎 (Swing/Dow/MSS/Box/Channel/Wave客观失效)
+├── strategy_layer.py        # 美股策略层 (200 EMA 顺势代理/四指数协同/微观脱钩/全闭环推演)
+├── strategy_day.py          # 日内 5m 高分辨率微观策略引擎 (8 bps 摩擦核算/2.5R/1h HTF 趋势门禁)
 ├── strategy_crypto.py       # 加密资产专用策略引擎 (2B猎杀/宽止损/分级止盈/资产解耦)
 └── README.md                # 项目架构与快速上手指南
 ```
@@ -64,14 +64,19 @@ flowchart TD
 
 ## 快速上手与常用命令
 
-### 1. 运行完整单元测试套件 (45 项测试 100% PASS)
+### 1. 运行完整单元与端到端对抗测试套件 (304 项测试 100% PASS)
 ```bash
 python -m unittest discover tests
 ```
 
-### 2. 执行零未来函数数学自检 (T1~T11 项严格检验 100% PASS)
+### 2. 执行零未来函数纯因果数学自检 (T1~T16 项严格检验 100% PASS)
 ```bash
 python backtest.py --verify
+```
+
+### 3. 执行日内 5m 真实摩擦损耗 (8 bps) 对比回测
+```bash
+python backtest.py --day --tickers AAPL,NVDA --offline
 ```
 
 ### 3. 数据拉取与缓存状态检查
