@@ -11,7 +11,7 @@ Before proposing or placing ANY live or simulated order (via `okx-trading` MCP o
 2. **Position Sizing, Portfolio Cap & Liquidation Guard**:
    - Cap `1R` risk at `0.5%–1.0%` of account equity (`Risk_USD = Equity * Risk_Pct`, `Size = Risk_USD / (1R * ctVal)` rounded to `lotSz`, `>= minSz`).
    - **Portfolio & Correlation Cap**: Sum of open `1R` risks across all concurrent positions must be `<= 2.5%–3.0%` of equity; max `1–2` positions per correlated beta/sector bucket (e.g., US mega-cap tech `AAPL/NVDA/MSFT/QQQ` or crypto majors `BTC/ETH/SOL`).
-   - **Persistent Risk Ledger Enforcement**: Before proposing or placing ANY live/demo order, run `python risk_ledger.py check --symbol <SYMBOL> --risk-pct <PCT>` (and call `open` / `update-risk` / `close` on fills/BE/exits) so daily loss (`-2.0%` / `-2.5R`), max drawdown (`-5.0R`), 3-loss/rolling-loss 24h cooldown, and correlation bucket caps persist across sessions.
+   - **Persistent Risk Ledger Enforcement**: Before proposing or placing ANY live/demo order, run `python risk_ledger.py check --symbol <SYMBOL> --risk-pct <PCT>` (and call `record-open` / `record-close` on fills) so daily loss (`-2.0%` / `-2.5R`), 3-loss 24h cooldown, and correlation bucket caps persist across sessions.
    - **Loss Circuit Breakers**: Daily loss limit `-2.0%` (or `-2.5R`) halts new entries for the day; `3` consecutive `-1R` losses triggers a 24h cooldown and halves `1R` to `0.25%–0.5%`.
    - **Liquidation & Stock-Token Perp Guard**: Require `|Liq_Px - Entry| >= 2.0 * 1R` on standard crypto perps and `>= 4.0 * 1R` on OKX stock-token perps (`AAPL-USDT-SWAP`, etc.); avoid holding full size across weekends or earnings gaps.
 3. **Compute Exact Risk (`1R`) & Weighted R:R**:

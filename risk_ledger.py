@@ -12,8 +12,7 @@ CORRELATION_BUCKETS = {
     "us_mega_tech": {
         "AAPL", "NVDA", "MSFT", "META", "GOOGL", "GOOG", "AMZN", "TSLA",
         "QQQ", "SPY", "SMH", "AVGO", "AMD", "NFLX",
-        "AAPL-USDT-SWAP", "NVDA-USDT-SWAP", "TSLA-USDT-SWAP", "GOOGL-USDT-SWAP",
-        "QQQ-USDT-SWAP", "SPY-USDT-SWAP", "AMD-USDT-SWAP", "MU-USDT-SWAP", "SOXX-USDT-SWAP",
+        "AAPL-USDT-SWAP", "NVDA-USDT-SWAP", "TSLA-USDT-SWAP",
     },
     "crypto_majors": {
         "BTC", "ETH", "SOL", "BTC-USD", "ETH-USD", "SOL-USD",
@@ -53,10 +52,6 @@ def _default_state() -> dict:
         "closed_trades": [],
         "daily_stats": {},
         "consecutive_losses": 0,
-        "rolling_loss_r": 0.0,
-        "cumulative_r": 0.0,
-        "peak_r": 0.0,
-        "drawdown_r": 0.0,
         "cooldown_until": None,
     }
 
@@ -82,29 +77,18 @@ def save_ledger(state: dict, ledger_path: str | Path = DEFAULT_LEDGER_PATH) -> N
 def check_pre_trade_risk(
     symbol: str,
     risk_pct: float,
-    side: str | None = None,
     ledger_path: str | Path = DEFAULT_LEDGER_PATH,
 ) -> dict:
-    """Enforce single-trade cap, portfolio open/net-directional risk, correlation bucket, daily loss, drawdown, and cooldown."""
+    """Enforce single-trade cap, portfolio open risk, correlation bucket, daily loss, and cooldown."""
     state = load_ledger(ledger_path)
     consec = int(state.get("consecutive_losses", 0))
-    rolling_loss_r = float(state.get("rolling_loss_r", 0.0))
-    drawdown_r = float(state.get("drawdown_r", 0.0))
-    max_single_risk = 0.005 if (consec >= 3 or rolling_loss_r <= -2.5) else 0.01
+    max_single_risk = 0.005 if consec >= 3 else 0.01
 
-    if drawdown_r <= -5.0:
+    if risk_pct <= 0 or risk_pct > max_single_risk:
         return {
             "passed": False,
-            "reason": "MAX_DRAWDOWN_CIRCUIT_BREAKER",
-            "detail": f"Account drawdown_r={drawdown_r:.2f} breached -5.0R HWM limit; manual review required",
-        }
-
-    today = state.get("daily_stats", {}).get(_today_str(), {"pnl_pct": 0.0, "pnl_r": 0.0})
-    if float(today.get("pnl_pct", 0.0)) <= -0.02 or float(today.get("pnl_r", 0.0)) <= -2.5:
-        return {
-            "passed": False,
-            "reason": "DAILY_LOSS_CIRCUIT_BREAKER",
-            "detail": f"Today pnl_pct={today.get('pnl_pct', 0.0):.4f}, pnl_r={today.get('pnl_r', 0.0):.2f} hit daily stop",
+            "reason": "SINGLE_TRADE_RISK_CAP_EXCEEDED",
+            "detail": f"risk_pct={risk_pct:.4f} exceeds max allowed {max_single_risk:.4f} (consecutive_losses={consec})",
         }
 
     cooldown_until = state.get("cooldown_until")
@@ -114,14 +98,15 @@ def check_pre_trade_risk(
             return {
                 "passed": False,
                 "reason": "CONSECUTIVE_LOSS_COOLDOWN",
-                "detail": f"Active 24h cooldown until {cooldown_until} after {consec} consecutive losses (rolling_loss_r={rolling_loss_r:.2f})",
+                "detail": f"Active 24h cooldown until {cooldown_until} after {consec} consecutive losses",
             }
 
-    if risk_pct <= 0 or risk_pct > max_single_risk:
+    today = state.get("daily_stats", {}).get(_today_str(), {"pnl_pct": 0.0, "pnl_r": 0.0})
+    if float(today.get("pnl_pct", 0.0)) <= -0.02 or float(today.get("pnl_r", 0.0)) <= -2.5:
         return {
             "passed": False,
-            "reason": "SINGLE_TRADE_RISK_CAP_EXCEEDED",
-            "detail": f"risk_pct={risk_pct:.4f} exceeds max allowed {max_single_risk:.4f} (consecutive_losses={consec}, rolling_loss_r={rolling_loss_r:.2f})",
+            "reason": "DAILY_LOSS_CIRCUIT_BREAKER",
+            "detail": f"Today pnl_pct={today.get('pnl_pct', 0.0):.4f}, pnl_r={today.get('pnl_r', 0.0):.2f} hit daily stop",
         }
 
     open_pos = state.get("open_positions", [])
@@ -133,30 +118,13 @@ def check_pre_trade_risk(
             "detail": f"open_risk={total_open_risk:.4f} + new={risk_pct:.4f} > 0.0300",
         }
 
-    norm_side = str(side or "buy").strip().lower()
-    dir_sign = -1.0 if norm_side == "sell" else 1.0
-    net_dir_risk = sum(
-        float(p.get("risk_pct", 0.0)) * (-1.0 if str(p.get("side", "buy")).strip().lower() == "sell" else 1.0)
-        for p in open_pos
-    )
-    projected_net_dir = abs(net_dir_risk + dir_sign * risk_pct)
-    if projected_net_dir > 0.025 + 1e-12:
-        return {
-            "passed": False,
-            "reason": "NET_DIRECTIONAL_RISK_CAP_EXCEEDED",
-            "detail": f"|net_directional_risk|={projected_net_dir:.4f} > 0.0250",
-        }
-
     bucket = get_bucket(symbol)
-    bucket_pos = [p for p in open_pos if p.get("bucket") == bucket]
-    same_dir_bucket_count = sum(
-        1 for p in bucket_pos if str(p.get("side", "buy")).strip().lower() == norm_side
-    )
-    if same_dir_bucket_count >= 2 or len(bucket_pos) >= 3:
+    bucket_count = sum(1 for p in open_pos if p.get("bucket") == bucket)
+    if bucket_count >= 2:
         return {
             "passed": False,
             "reason": "CORRELATION_BUCKET_CAP_EXCEEDED",
-            "detail": f"bucket '{bucket}' has {same_dir_bucket_count} same-side ({norm_side}) / {len(bucket_pos)} total open positions",
+            "detail": f"bucket '{bucket}' already has {bucket_count} open positions (max 2)",
         }
 
     return {
@@ -164,8 +132,7 @@ def check_pre_trade_risk(
         "reason": "OK",
         "bucket": bucket,
         "total_open_risk_after": round(total_open_risk + risk_pct, 6),
-        "net_directional_risk_after": round(net_dir_risk + dir_sign * risk_pct, 6),
-        "bucket_count_after": len(bucket_pos) + 1,
+        "bucket_count_after": bucket_count + 1,
     }
 
 
@@ -175,10 +142,9 @@ def record_open(
     entry: float,
     sl: float,
     venue: str = "okx_swap",
-    side: str = "buy",
     ledger_path: str | Path = DEFAULT_LEDGER_PATH,
 ) -> dict:
-    gate = check_pre_trade_risk(symbol, risk_pct, side=side, ledger_path=ledger_path)
+    gate = check_pre_trade_risk(symbol, risk_pct, ledger_path=ledger_path)
     if not gate["passed"]:
         raise ValueError(f"Pre-trade risk gate blocked open: {gate['reason']} ({gate['detail']})")
 
@@ -186,7 +152,6 @@ def record_open(
     pos = {
         "symbol": symbol.strip().upper(),
         "bucket": get_bucket(symbol),
-        "side": str(side).strip().lower(),
         "risk_pct": float(risk_pct),
         "entry": float(entry),
         "sl": float(sl),
@@ -196,29 +161,6 @@ def record_open(
     state["open_positions"].append(pos)
     save_ledger(state, ledger_path)
     return pos
-
-
-def update_position_risk(
-    symbol: str,
-    new_risk_pct: float,
-    ledger_path: str | Path = DEFAULT_LEDGER_PATH,
-) -> dict:
-    """Update open risk_pct for an active position (e.g., set to 0.0 after TP1 breakeven)."""
-    if new_risk_pct < 0:
-        raise ValueError("new_risk_pct must be >= 0")
-    state = load_ledger(ledger_path)
-    sym = symbol.strip().upper()
-    updated = None
-    for p in state.get("open_positions", []):
-        if p.get("symbol") == sym:
-            p["risk_pct"] = float(new_risk_pct)
-            p["risk_updated_at"] = _now_utc().isoformat()
-            updated = p
-            break
-    if updated is None:
-        raise ValueError(f"No open position found in ledger for {sym}")
-    save_ledger(state, ledger_path)
-    return updated
 
 
 def record_close(
@@ -244,21 +186,12 @@ def record_close(
     daily["pnl_pct"] = round(float(daily["pnl_pct"]) + float(pnl_pct), 6)
     daily["trades"] = int(daily["trades"]) + 1
 
-    cum_r = round(float(state.get("cumulative_r", 0.0)) + float(pnl_r), 4)
-    peak_r = max(float(state.get("peak_r", 0.0)), cum_r)
-    state["cumulative_r"] = cum_r
-    state["peak_r"] = round(peak_r, 4)
-    state["drawdown_r"] = round(cum_r - peak_r, 4)
-
-    if pnl_r < 0:
-        state["rolling_loss_r"] = round(float(state.get("rolling_loss_r", 0.0)) + float(pnl_r), 4)
-        if pnl_r <= -0.5:
-            state["consecutive_losses"] = int(state.get("consecutive_losses", 0)) + 1
-        if state["consecutive_losses"] >= 3 or state["rolling_loss_r"] <= -2.5:
+    if pnl_r <= -0.5:
+        state["consecutive_losses"] = int(state.get("consecutive_losses", 0)) + 1
+        if state["consecutive_losses"] >= 3:
             state["cooldown_until"] = (_now_utc() + timedelta(hours=24)).isoformat()
     elif pnl_r > 0:
         state["consecutive_losses"] = 0
-        state["rolling_loss_r"] = 0.0
         state["cooldown_until"] = None
 
     trade = {
@@ -269,14 +202,7 @@ def record_close(
     }
     state["closed_trades"].append(trade)
     save_ledger(state, ledger_path)
-    return {
-        "trade": trade,
-        "daily": daily,
-        "consecutive_losses": state["consecutive_losses"],
-        "rolling_loss_r": state["rolling_loss_r"],
-        "drawdown_r": state["drawdown_r"],
-        "cooldown_until": state["cooldown_until"],
-    }
+    return {"trade": trade, "daily": daily, "consecutive_losses": state["consecutive_losses"], "cooldown_until": state["cooldown_until"]}
 
 
 def main() -> int:
@@ -289,14 +215,12 @@ def main() -> int:
     p_chk = sub.add_parser("check")
     p_chk.add_argument("--symbol", required=True)
     p_chk.add_argument("--risk-pct", type=float, required=True)
-    p_chk.add_argument("--side", default="buy", choices=["buy", "sell"])
 
     p_open = sub.add_parser("open")
     p_open.add_argument("--symbol", required=True)
     p_open.add_argument("--risk-pct", type=float, required=True)
     p_open.add_argument("--entry", type=float, required=True)
     p_open.add_argument("--sl", type=float, required=True)
-    p_open.add_argument("--side", default="buy", choices=["buy", "sell"])
     p_open.add_argument("--venue", default="okx_swap")
 
     p_cls = sub.add_parser("close")
@@ -304,28 +228,20 @@ def main() -> int:
     p_cls.add_argument("--pnl-r", type=float, required=True)
     p_cls.add_argument("--pnl-pct", type=float, required=True)
 
-    p_upd = sub.add_parser("update-risk")
-    p_upd.add_argument("--symbol", required=True)
-    p_upd.add_argument("--risk-pct", type=float, required=True)
-
     args = parser.parse_args()
     if args.cmd == "status":
         print(json.dumps(load_ledger(args.ledger), indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "check":
-        res = check_pre_trade_risk(args.symbol, args.risk_pct, side=args.side, ledger_path=args.ledger)
+        res = check_pre_trade_risk(args.symbol, args.risk_pct, ledger_path=args.ledger)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         return 0 if res["passed"] else 1
     if args.cmd == "open":
-        res = record_open(args.symbol, args.risk_pct, args.entry, args.sl, venue=args.venue, side=args.side, ledger_path=args.ledger)
+        res = record_open(args.symbol, args.risk_pct, args.entry, args.sl, venue=args.venue, ledger_path=args.ledger)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         return 0
     if args.cmd == "close":
         res = record_close(args.symbol, args.pnl_r, args.pnl_pct, ledger_path=args.ledger)
-        print(json.dumps(res, indent=2, ensure_ascii=False))
-        return 0
-    if args.cmd == "update-risk":
-        res = update_position_risk(args.symbol, args.risk_pct, ledger_path=args.ledger)
         print(json.dumps(res, indent=2, ensure_ascii=False))
         return 0
     return 1
