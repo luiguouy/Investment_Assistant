@@ -122,6 +122,32 @@ class TestOkxAgentMarket(unittest.TestCase):
         self.assertEqual(res["allowed_direction"], "NONE")
         self.assertIn("EXTERNAL_PA_ENGINE_CONFLICT", {c["code"] for c in res["conflicts"]})
 
+        # Missing US stock confirmation on stock_token must HALT (no silent pass)
+        res_missing = analyze_okx_market("AAPL-USDT-SWAP", htf_up, mtf_up, external_pa_bias=None)
+        self.assertEqual(res_missing["verdict"], "CONFLICT_HALT")
+        self.assertIn("MISSING_US_STOCK_CONFIRMATION", {c["code"] for c in res_missing["conflicts"]})
+
+        # Aligned US stock confirmation + normal basis allows LONG
+        okx_last = float(mtf_up["Close"].iloc[-1])
+        res_ok = analyze_okx_market(
+            "AAPL-USDT-SWAP",
+            htf_up,
+            mtf_up,
+            us_stock_ref={"available": True, "ticker": "AAPL", "bias": 1, "last_close": okx_last * 0.995},
+        )
+        self.assertEqual(res_ok["verdict"], "ALLOW", res_ok["conflicts"])
+        self.assertEqual(res_ok["allowed_direction"], "LONG")
+
+        # Severe off-hours basis dislocation (>3%) halts even if direction aligns
+        res_basis = analyze_okx_market(
+            "AAPL-USDT-SWAP",
+            htf_up,
+            mtf_up,
+            us_stock_ref={"available": True, "ticker": "AAPL", "bias": 1, "last_close": okx_last * 0.94},
+        )
+        self.assertEqual(res_basis["verdict"], "CONFLICT_HALT")
+        self.assertIn("US_STOCK_BASIS_DISLOCATION", {c["code"] for c in res_basis["conflicts"]})
+
     def test_neutral_wait_when_htf_and_mtf_neutral(self):
         res = check_four_way_consistency(
             {"dow_bias": 0},

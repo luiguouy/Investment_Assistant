@@ -172,13 +172,58 @@ def analyze_timeframe(
     })
 
 
+def evaluate_us_stock_reference(base_ticker: str, swing_order: int = 5) -> dict[str, Any]:
+    """Load real US stock daily/weekly K-lines to cross-verify OKX stock-token perpetuals."""
+    import data_sources as ds
+
+    tk = base_ticker.strip().upper().replace("-USDT-SWAP", "")
+    df_d = ds.read_cache(tk)
+    if df_d.empty:
+        df_d, _ = ds.fetch_history(tk, bars=800, allow_network=True)
+    if df_d.empty or len(df_d) < 60:
+        return {"available": False, "ticker": tk, "bias": None, "last_close": None, "reason": "insufficient US stock data"}
+
+    agg = {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+    if "Volume" in df_d.columns:
+        agg["Volume"] = "sum"
+    df_w = df_d.resample("W-FRI").agg(agg).dropna(subset=["Open", "High", "Low", "Close"])
+
+    mtf = analyze_timeframe(df_d.tail(250), swing_order=swing_order)
+    htf = analyze_timeframe(df_w.tail(150), swing_order=max(3, min(swing_order, 4))) if len(df_w) >= 30 else {"dow_bias": 0}
+
+    last_close = float(df_d["Close"].iloc[-1])
+    ema200 = float(df_d["Close"].ewm(span=200, adjust=False).mean().iloc[-1]) if len(df_d) >= 200 else None
+    above_ema200 = (last_close > ema200) if ema200 is not None else None
+
+    d_bias = int(mtf.get("dow_bias", 0))
+    w_bias = int(htf.get("dow_bias", 0))
+    if d_bias != 0 and w_bias != 0 and d_bias != w_bias:
+        combined_bias = 0
+    else:
+        combined_bias = d_bias if d_bias != 0 else w_bias
+
+    return {
+        "available": True,
+        "ticker": tk,
+        "last_date": str(df_d.index[-1].date()),
+        "last_close": round(last_close, 4),
+        "ema200": round(ema200, 4) if ema200 is not None else None,
+        "above_ema200": above_ema200,
+        "weekly_bias": w_bias,
+        "daily_bias": d_bias,
+        "bias": combined_bias,
+    }
+
+
 def check_four_way_consistency(
     htf: dict,
     mtf: dict,
     perp_type: str = "crypto",
     external_pa_bias: int | None = None,
+    us_last_close: float | None = None,
+    max_basis_pct: float = 0.03,
 ) -> dict:
-    """Enforce AGENTS.md Section 3 Four-Way Consistency Check across HTF/MTF/MSS/Channel."""
+    """Enforce AGENTS.md Section 3 Four-Way Consistency Check + mandatory US stock K-line cross-verification."""
     htf_bias = int(htf.get("dow_bias", 0))
     mtf_bias = int(mtf.get("dow_bias", 0))
     mtf_mss_dir = int(mtf.get("mss_dir", 0))
@@ -203,7 +248,28 @@ def check_four_way_consistency(
                 })
 
     okx_dir = 1 if positives and not negatives else (-1 if negatives and not positives else 0)
-    if external_pa_bias is not None and int(external_pa_bias) != 0 and okx_dir != 0:
+
+    if perp_type == "stock_token":
+        if external_pa_bias is None:
+            conflicts.append({
+                "code": "MISSING_US_STOCK_CONFIRMATION",
+                "detail": "stock_token perpetual requires real US stock K-line confirmation (external_pa_bias missing)",
+            })
+        elif okx_dir != 0 and int(external_pa_bias) != okx_dir:
+            conflicts.append({
+                "code": "EXTERNAL_PA_ENGINE_CONFLICT",
+                "detail": f"OKX live structure ({okx_dir:+d}) opposes/unconfirmed by real US stock bias ({int(external_pa_bias):+d})",
+            })
+
+        okx_last = mtf.get("last_close") or htf.get("last_close")
+        if us_last_close is not None and us_last_close > 0 and okx_last is not None:
+            basis_pct = abs(float(okx_last) - float(us_last_close)) / float(us_last_close)
+            if basis_pct > max_basis_pct:
+                conflicts.append({
+                    "code": "US_STOCK_BASIS_DISLOCATION",
+                    "detail": f"OKX last={float(okx_last):.2f} deviates {basis_pct:.2%} from US stock close={float(us_last_close):.2f} (> {max_basis_pct:.1%})",
+                })
+    elif external_pa_bias is not None and int(external_pa_bias) != 0 and okx_dir != 0:
         if int(external_pa_bias) != okx_dir:
             conflicts.append({
                 "code": "EXTERNAL_PA_ENGINE_CONFLICT",
@@ -238,10 +304,11 @@ def analyze_okx_market(
     mtf_df: pd.DataFrame,
     ltf_df: pd.DataFrame | None = None,
     external_pa_bias: int | None = None,
+    us_stock_ref: dict[str, Any] | None = None,
     swing_order: int = 5,
     universe_path: str | Path = DEFAULT_UNIVERSE_PATH,
 ) -> dict:
-    """Analyze multi-timeframe OKX candles and run mandatory Four-Way Consistency Check."""
+    """Analyze multi-timeframe OKX candles and run mandatory Four-Way Consistency + US stock cross-check."""
     sym = inst_id.strip().upper()
     policy = get_instrument_policy(sym, universe_path=universe_path)
 
@@ -249,11 +316,19 @@ def analyze_okx_market(
     mtf = analyze_timeframe(mtf_df, swing_order=swing_order)
     ltf = analyze_timeframe(ltf_df, swing_order=swing_order) if ltf_df is not None else None
 
+    eff_ext_bias = external_pa_bias
+    us_last_close = None
+    if us_stock_ref and us_stock_ref.get("available"):
+        if eff_ext_bias is None:
+            eff_ext_bias = us_stock_ref.get("bias")
+        us_last_close = us_stock_ref.get("last_close")
+
     consistency = check_four_way_consistency(
         htf,
         mtf,
         perp_type=policy["perp_type"],
-        external_pa_bias=external_pa_bias,
+        external_pa_bias=eff_ext_bias,
+        us_last_close=us_last_close,
     )
 
     entry_triggers = (ltf["pa_signals"] if ltf is not None else []) + mtf["pa_signals"]
@@ -265,6 +340,7 @@ def analyze_okx_market(
         "verdict": consistency["verdict"],
         "allowed_direction": consistency["allowed_direction"],
         "conflicts": consistency["conflicts"],
+        "us_stock_reference": us_stock_ref,
         "htf": htf,
         "mtf": mtf,
         "ltf": ltf,
@@ -284,6 +360,7 @@ def main() -> int:
     parser.add_argument("--external-pa-bias", type=int, default=None, choices=[-1, 0, 1])
     args = parser.parse_args()
 
+    us_stock_ref = None
     if args.input:
         with Path(args.input).open("r", encoding="utf-8") as f:
             payload = json.load(f)
@@ -292,6 +369,7 @@ def main() -> int:
         mtf_df = parse_okx_candles(payload["mtf_candles"], drop_unconfirmed=True)
         ltf_df = parse_okx_candles(payload["ltf_candles"], drop_unconfirmed=True) if payload.get("ltf_candles") else None
         ext_bias = payload.get("external_pa_bias", args.external_pa_bias)
+        us_stock_ref = payload.get("us_stock_reference")
         swing_order = int(payload.get("swing_order", args.swing_order))
     elif args.inst_id:
         inst_id = args.inst_id
@@ -300,6 +378,9 @@ def main() -> int:
         ltf_df = fetch_okx_candles(inst_id, bar=args.ltf, limit=args.limit) if args.ltf else None
         ext_bias = args.external_pa_bias
         swing_order = args.swing_order
+        policy = get_instrument_policy(inst_id)
+        if policy["perp_type"] == "stock_token":
+            us_stock_ref = evaluate_us_stock_reference(inst_id, swing_order=swing_order)
     else:
         parser.error("Provide either --input or --inst-id")
         return 1
@@ -310,6 +391,7 @@ def main() -> int:
         mtf_df=mtf_df,
         ltf_df=ltf_df,
         external_pa_bias=ext_bias,
+        us_stock_ref=us_stock_ref,
         swing_order=swing_order,
     )
     print(json.dumps(result, indent=2, ensure_ascii=False))

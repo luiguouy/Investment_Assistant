@@ -11,6 +11,7 @@ from okx_agent.journal import append_journal_entry, read_journal
 from okx_agent.reconcile import (
     evaluate_realized_slippage,
     plan_breakeven_amend,
+    plan_trailing_stop_amend,
     reconcile_state,
 )
 from risk_ledger import record_open
@@ -87,6 +88,53 @@ class TestOkxAgentReconcileAndJournal(unittest.TestCase):
         crossed = plan_breakeven_amend("BTC-USDT-SWAP", "buy", entry=100000.0, mark_px=99950.0, algo_id="a2")
         self.assertEqual(crossed["action"], "MARKET_CLOSE_REMAINING")
         self.assertEqual(crossed["tool"], "swap_close_position")
+
+        # With fee buffer (10 bps), mark_px=100050 is below buffered BE 100100 -> market close
+        buffered_crossed = plan_breakeven_amend(
+            "BTC-USDT-SWAP", "buy", entry=100000.0, mark_px=100050.0, algo_id="a2", taker_fee_rate=0.0005
+        )
+        self.assertEqual(buffered_crossed["action"], "MARKET_CLOSE_REMAINING")
+        self.assertEqual(buffered_crossed["breakeven_px"], 100100.0)
+
+        buffered_safe = plan_breakeven_amend(
+            "BTC-USDT-SWAP", "buy", entry=100000.0, mark_px=100250.0, algo_id="a2", taker_fee_rate=0.0005
+        )
+        self.assertEqual(buffered_safe["action"], "AMEND_SL_TO_BREAKEVEN")
+        self.assertEqual(buffered_safe["params"]["newSlTriggerPx"], "100100.0")
+
+    def test_p1_plan_trailing_stop_amend(self):
+        # Tightening SL for long with >= 0.25R step succeeds
+        ok = plan_trailing_stop_amend(
+            "BTC-USDT-SWAP",
+            "buy",
+            current_sl=100100.0,
+            candidate_sl=101500.0,
+            mark_px=103000.0,
+            algo_id="a2",
+            entry=100000.0,
+            initial_sl=99000.0,
+        )
+        self.assertEqual(ok["action"], "AMEND_TRAILING_SL")
+        self.assertEqual(ok["params"]["newSlTriggerPx"], "101500.0")
+
+        # Widening SL is rejected
+        widen = plan_trailing_stop_amend(
+            "BTC-USDT-SWAP", "buy", current_sl=100100.0, candidate_sl=99500.0, mark_px=103000.0, algo_id="a2"
+        )
+        self.assertEqual(widen["action"], "NO_TRAILING_AMEND")
+
+        # Step too small (< 0.25R) is skipped
+        tiny = plan_trailing_stop_amend(
+            "BTC-USDT-SWAP",
+            "buy",
+            current_sl=100100.0,
+            candidate_sl=100200.0,
+            mark_px=103000.0,
+            algo_id="a2",
+            entry=100000.0,
+            initial_sl=99000.0,
+        )
+        self.assertEqual(tiny["action"], "NO_TRAILING_AMEND")
 
     def test_evaluate_realized_slippage_and_liquidity_collapse(self):
         res_slip = evaluate_realized_slippage(entry=100.0, sl=98.0, exit_px=96.4, side="buy")

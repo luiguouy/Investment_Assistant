@@ -133,20 +133,30 @@ def plan_breakeven_amend(
     mgn_mode: str = "isolated",
     pos_side: str = "net",
     simulated_trading: bool = True,
+    fee_buffer_rate: float = 0.0,
+    taker_fee_rate: float = 0.0,
+    funding_cost_rate: float = 0.0,
 ) -> dict:
-    """Validate markPx vs entry before issuing atomic BE amend (Playbook 2)."""
+    """Validate markPx vs fee-buffered breakeven price before issuing atomic BE amend (Playbook 2)."""
     sym = inst_id.strip().upper()
     side_l = side.strip().lower()
-    safe_for_be = (side_l == "buy" and mark_px > entry) or (side_l == "sell" and mark_px < entry)
+    total_buffer = max(0.0, float(fee_buffer_rate)) + 2.0 * abs(float(taker_fee_rate)) + max(0.0, float(funding_cost_rate))
+    if total_buffer > 0.0:
+        be_px = round(entry * (1.0 + total_buffer) if side_l == "buy" else entry * (1.0 - total_buffer), 8)
+    else:
+        be_px = entry
+
+    safe_for_be = (side_l == "buy" and mark_px > be_px) or (side_l == "sell" and mark_px < be_px)
 
     if safe_for_be:
         return {
             "action": "AMEND_SL_TO_BREAKEVEN",
             "tool": "swap_amend_algo_order",
+            "breakeven_px": be_px,
             "params": {
                 "instId": sym,
                 "algoId": algo_id,
-                "newSlTriggerPx": str(entry),
+                "newSlTriggerPx": str(be_px),
                 "newSlOrdPx": "-1",
                 "simulatedTrading": simulated_trading,
             },
@@ -164,8 +174,59 @@ def plan_breakeven_amend(
     return {
         "action": "MARKET_CLOSE_REMAINING",
         "tool": "swap_close_position",
+        "breakeven_px": be_px,
         "params": close_params,
-        "reason": f"markPx={mark_px} already crossed entry={entry} on losing side for {side_l}",
+        "reason": f"markPx={mark_px} already crossed breakeven={be_px} on losing side for {side_l}",
+    }
+
+
+def plan_trailing_stop_amend(
+    inst_id: str,
+    side: str,
+    current_sl: float,
+    candidate_sl: float,
+    mark_px: float,
+    algo_id: str,
+    entry: float | None = None,
+    initial_sl: float | None = None,
+    min_step_r: float = 0.25,
+    simulated_trading: bool = True,
+) -> dict:
+    """Plan an atomic trailing-SL tighten amend; never widens SL or places SL across markPx."""
+    sym = inst_id.strip().upper()
+    side_l = side.strip().lower()
+    improves = (candidate_sl > current_sl) if side_l == "buy" else (candidate_sl < current_sl)
+    if not improves:
+        return {
+            "action": "NO_TRAILING_AMEND",
+            "reason": f"candidate_sl={candidate_sl} does not tighten current_sl={current_sl} for {side_l}",
+        }
+
+    if entry is not None and initial_sl is not None:
+        one_r = abs(entry - initial_sl)
+        if one_r > 0 and abs(candidate_sl - current_sl) < min_step_r * one_r:
+            return {
+                "action": "NO_TRAILING_AMEND",
+                "reason": f"step {abs(candidate_sl - current_sl):.4f} < min_step_r ({min_step_r} * {one_r:.4f})",
+            }
+
+    safe_mark = (mark_px > candidate_sl) if side_l == "buy" else (mark_px < candidate_sl)
+    if not safe_mark:
+        return {
+            "action": "NO_TRAILING_AMEND",
+            "reason": f"markPx={mark_px} is already at/beyond candidate_sl={candidate_sl} for {side_l}",
+        }
+
+    return {
+        "action": "AMEND_TRAILING_SL",
+        "tool": "swap_amend_algo_order",
+        "params": {
+            "instId": sym,
+            "algoId": algo_id,
+            "newSlTriggerPx": str(candidate_sl),
+            "newSlOrdPx": "-1",
+            "simulatedTrading": simulated_trading,
+        },
     }
 
 

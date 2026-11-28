@@ -18,6 +18,7 @@ def load_universe(universe_path: str | Path = DEFAULT_UNIVERSE_PATH) -> dict:
 def get_instrument_policy(
     inst_id: str,
     universe_path: str | Path = DEFAULT_UNIVERSE_PATH,
+    inst_category: str | None = None,
 ) -> dict:
     """Return merged defaults, perp-type rules, and instrument metadata for inst_id."""
     data = load_universe(universe_path)
@@ -29,7 +30,7 @@ def get_instrument_policy(
     inst_cfg = instruments.get(sym)
     in_universe = inst_cfg is not None
     if inst_cfg is None:
-        perp_type = "crypto"
+        perp_type = "stock_token" if str(inst_category or "").strip() == "3" else "crypto"
         enabled = False
         bucket = get_bucket(sym)
     else:

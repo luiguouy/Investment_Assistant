@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from okx_agent.preflight import evaluate_preflight
-from risk_ledger import record_close, record_open
+from risk_ledger import check_pre_trade_risk, record_close, record_open, update_position_risk
 
 
 def _make_book(mid: float, spread_bps: float = 2.0, sz_per_level: float = 100.0) -> tuple[list, list]:
@@ -223,7 +223,7 @@ class TestOkxAgentPreflight(unittest.TestCase):
         exact_min["tp2"] = None
         exact_min["w1"] = 1.0
         exact_min["w2"] = 0.0
-        exact_min["tp1"] = 103000.0
+        exact_min["tp1"] = 103100.0
         res_single = evaluate_preflight(exact_min)
         self.assertTrue(res_single["passed"], res_single["rejections"])
         self.assertEqual(len(res_single["orders"]), 1)
@@ -302,6 +302,103 @@ class TestOkxAgentPreflight(unittest.TestCase):
         self.assertEqual(proc_bad.returncode, 1)
         out_bad = json.loads(proc_bad.stdout)
         self.assertFalse(out_bad["passed"])
+
+    def test_p0_tp1_rr_stop_width_leverage_and_avail_margin_guards(self):
+        # TP1 = 0.8R + TP2 = 5.0R -> Weighted gross = 2.9R, but TP1 < 1.2R rejected
+        p_tp1 = self._base_btc_long()
+        p_tp1["tp1"] = 100800.0
+        p_tp1["tp2"] = 105000.0
+        r_tp1 = evaluate_preflight(p_tp1)
+        self.assertFalse(r_tp1["passed"])
+        self.assertIn("REJECTED_TP1_RR_BELOW_MIN", {r["code"] for r in r_tp1["rejections"]})
+
+        # Stop width too narrow (0.1%) and leverage > 20x and avail_bal_usd insufficient
+        p_guards = self._base_btc_long()
+        p_guards["sl"] = 99900.0  # 0.1% < 0.3%
+        p_guards["tp1"] = 100300.0
+        p_guards["tp2"] = 100500.0
+        p_guards["leverage"] = 30.0
+        p_guards["avail_bal_usd"] = 10.0
+        r_guards = evaluate_preflight(p_guards)
+        codes = {r["code"] for r in r_guards["rejections"]}
+        self.assertIn("REJECTED_STOP_WIDTH_OUT_OF_RANGE", codes)
+        self.assertIn("REJECTED_LEVERAGE_EXCEEDED", codes)
+        self.assertIn("REJECTED_INSUFFICIENT_AVAILABLE_MARGIN", codes)
+
+    def test_p0_stock_token_category_and_weekend_earnings_verdict_guards(self):
+        bids, asks = _make_book(280.0, spread_bps=1.0, sz_per_level=5000.0)
+        p = {
+            "inst_id": "MSFT-USDT-SWAP",
+            "allow_unlisted": True,
+            "inst_category": "3",
+            "side": "buy",
+            "ord_type": "limit",
+            "entry": 280.0,
+            "sl": 271.6,       # 3.0% 1R
+            "tp1": 296.8,      # 2.0R
+            "tp2": 305.2,      # 3.0R
+            "risk_pct": 0.008,
+            "equity_usd": 10000.0,
+            "leverage": 10.0,  # ~3.17R liq distance < 4.0R for stock_token
+            "acct_lv": 2,
+            "ct_val": 1.0,
+            "lot_sz": 0.01,
+            "min_sz": 0.01,
+            "tick_sz": 0.01,
+            "bids": bids,
+            "asks": asks,
+            "market_verdict": "CONFLICT_HALT",
+            "earnings_within_48h": True,
+            "is_weekend_or_off_hours": True,
+            "ledger_path": str(self.ledger_path),
+        }
+        res = evaluate_preflight(p)
+        self.assertEqual(res["perp_type"], "stock_token")
+        codes = {r["code"] for r in res["rejections"]}
+        self.assertIn("REJECTED_LIQ_DISTANCE_TOO_CLOSE", codes)
+        self.assertIn("REJECTED_MARKET_VERDICT_MISMATCH", codes)
+        self.assertIn("REJECTED_EARNINGS_GAP_WINDOW", codes)
+        self.assertIn("REJECTED_WEEKEND_STOCK_TOKEN_RISK", codes)
+
+        # V2.1 long-only stock_token gate blocks short without explicit override
+        p_short = dict(p)
+        p_short["side"] = "sell"
+        p_short["sl"] = 288.4
+        p_short["tp1"] = 263.2
+        p_short["tp2"] = 254.8
+        res_short = evaluate_preflight(p_short)
+        self.assertIn("REJECTED_STOCK_TOKEN_LONG_ONLY", {r["code"] for r in res_short["rejections"]})
+
+    def test_p0_risk_ledger_rolling_loss_drawdown_and_update_risk(self):
+        ledger3 = Path(self._tmpdir.name) / "risk_ledger3.json"
+        # Update risk to 0.0 after TP1 breakeven frees open risk budget
+        record_open("BTC-USDT-SWAP", 0.01, 100000.0, 99000.0, ledger_path=ledger3)
+        upd = update_position_risk("BTC-USDT-SWAP", 0.0, ledger_path=ledger3)
+        self.assertEqual(upd["risk_pct"], 0.0)
+        gate_after_be = check_pre_trade_risk("ETH-USDT-SWAP", 0.01, ledger_path=ledger3)
+        self.assertTrue(gate_after_be["passed"])
+
+        # Small losses (-0.4R * 7 = -2.8R) across days trigger rolling_loss_r cooldown even without -0.5R single loss
+        ledger4 = Path(self._tmpdir.name) / "risk_ledger4.json"
+        for i in range(7):
+            record_open("BTC-USDT-SWAP", 0.005, 100000.0, 99000.0, ledger_path=ledger4)
+            record_close("BTC-USDT-SWAP", -0.4, -0.002, ledger_path=ledger4)
+        # Clear today's daily_stats to isolate multi-day rolling_loss_r cooldown from daily loss stop
+        from risk_ledger import load_ledger, save_ledger
+        st4 = load_ledger(ledger4)
+        st4["daily_stats"] = {}
+        save_ledger(st4, ledger4)
+        gate_cd = check_pre_trade_risk("ETH-USDT-SWAP", 0.005, ledger_path=ledger4)
+        self.assertFalse(gate_cd["passed"])
+        self.assertEqual(gate_cd["reason"], "CONSECUTIVE_LOSS_COOLDOWN")
+
+        # Drawdown <= -5.0R triggers MAX_DRAWDOWN_CIRCUIT_BREAKER
+        ledger5 = Path(self._tmpdir.name) / "risk_ledger5.json"
+        record_open("BTC-USDT-SWAP", 0.01, 100000.0, 99000.0, ledger_path=ledger5)
+        record_close("BTC-USDT-SWAP", -5.2, -0.05, ledger_path=ledger5)
+        gate_dd = check_pre_trade_risk("ETH-USDT-SWAP", 0.005, ledger_path=ledger5)
+        self.assertFalse(gate_dd["passed"])
+        self.assertEqual(gate_dd["reason"], "MAX_DRAWDOWN_CIRCUIT_BREAKER")
 
 
 if __name__ == "__main__":

@@ -58,10 +58,19 @@ def evaluate_preflight(payload: dict) -> dict:
     universe_path = Path(payload["universe_path"]) if payload.get("universe_path") else DEFAULT_UNIVERSE_PATH
     ledger_path = Path(payload["ledger_path"]) if payload.get("ledger_path") else DEFAULT_LEDGER_PATH
 
-    policy = get_instrument_policy(inst_id, universe_path=universe_path)
+    policy = get_instrument_policy(
+        inst_id,
+        universe_path=universe_path,
+        inst_category=payload.get("inst_category"),
+    )
     defaults = policy["defaults"]
+    perp_rules = policy.get("perp_type_rules", {})
 
     min_weighted_rr = float(defaults.get("min_weighted_rr", 2.5))
+    min_tp1_rr = float(payload.get("min_tp1_rr", defaults.get("min_tp1_rr", 1.2)))
+    min_stop_pct = float(payload.get("min_stop_pct", defaults.get("min_stop_pct", 0.003)))
+    max_stop_pct = float(payload.get("max_stop_pct", defaults.get("max_stop_pct", 0.08)))
+    max_leverage = float(payload.get("max_leverage", defaults.get("max_leverage", 20.0)))
     max_spread_bps = float(defaults.get("max_spread_bps", 5.0))
     min_top5_depth_ratio = float(defaults.get("min_top5_depth_ratio", 3.0))
     min_liq_distance_r = float(policy["min_liq_distance_r"])
@@ -71,6 +80,37 @@ def evaluate_preflight(payload: dict) -> dict:
             rejections,
             "REJECTED_INSTRUMENT_NOT_IN_UNIVERSE",
             f"{inst_id} is not enabled in {universe_path.name}",
+        )
+
+    market_verdict = payload.get("market_verdict")
+    if market_verdict is not None and str(market_verdict).strip().upper() != "ALLOW":
+        _add_rejection(
+            rejections,
+            "REJECTED_MARKET_VERDICT_MISMATCH",
+            f"market_verdict={market_verdict} is not ALLOW",
+        )
+    market_dir = payload.get("market_direction")
+    if market_dir is not None:
+        expected_dir = "LONG" if side == "buy" else "SHORT"
+        if str(market_dir).strip().upper() != expected_dir:
+            _add_rejection(
+                rejections,
+                "REJECTED_MARKET_VERDICT_MISMATCH",
+                f"market_direction={market_dir} opposes order side={side}",
+            )
+
+    if perp_rules.get("avoid_earnings_gap") and bool(payload.get("earnings_within_48h", False)):
+        _add_rejection(
+            rejections,
+            "REJECTED_EARNINGS_GAP_WINDOW",
+            f"{inst_id} is within 48h earnings gap window",
+        )
+
+    if perp_rules.get("long_only") and side == "sell" and not bool(payload.get("allow_stock_token_short", False)):
+        _add_rejection(
+            rejections,
+            "REJECTED_STOCK_TOKEN_LONG_ONLY",
+            f"{inst_id} ({policy['perp_type']}) enforces V2.1 long-only rule; set allow_stock_token_short=true to override",
         )
 
     td_mode = str(payload.get("td_mode", defaults.get("default_td_mode", "isolated"))).strip().lower()
@@ -93,7 +133,21 @@ def evaluate_preflight(payload: dict) -> dict:
 
     risk_pct = float(payload["risk_pct"])
     equity_usd = float(payload["equity_usd"])
+    avail_bal_usd = float(payload["avail_bal_usd"]) if payload.get("avail_bal_usd") is not None else None
     leverage = float(payload["leverage"])
+    if leverage > max_leverage:
+        _add_rejection(
+            rejections,
+            "REJECTED_LEVERAGE_EXCEEDED",
+            f"leverage={leverage:.1f}x > max_leverage={max_leverage:.1f}x",
+        )
+    if perp_rules.get("avoid_weekend_full_size") and bool(payload.get("is_weekend_or_off_hours", False)):
+        if risk_pct > 0.005 and not bool(payload.get("allow_weekend_reduced", False)):
+            _add_rejection(
+                rejections,
+                "REJECTED_WEEKEND_STOCK_TOKEN_RISK",
+                f"stock_token weekend/off-hours risk_pct={risk_pct:.4f} exceeds 0.0050 reduced cap",
+            )
     expected_hold_funding_periods = float(
         payload.get("expected_hold_funding_periods", defaults.get("default_expected_hold_funding_periods", 3.0))
     )
@@ -214,7 +268,23 @@ def evaluate_preflight(payload: dict) -> dict:
                 f"Split sizes ({float(tranche1_sz_dec)}, {float(tranche2_sz_dec)}) below min_sz={float(min_sz_dec)}",
             )
 
+    stop_pct = r_dist / entry if entry > 0 else 0.0
+    if stop_pct < min_stop_pct or stop_pct > max_stop_pct:
+        _add_rejection(
+            rejections,
+            "REJECTED_STOP_WIDTH_OUT_OF_RANGE",
+            f"stop_pct={stop_pct:.4f} outside [{min_stop_pct:.4f}, {max_stop_pct:.4f}]",
+        )
+
     notional_usd = (total_sz if total_sz > 0 else float(raw_sz_dec)) * entry * ct_val
+    required_margin_usd = notional_usd / leverage
+    if avail_bal_usd is not None and required_margin_usd > avail_bal_usd:
+        _add_rejection(
+            rejections,
+            "REJECTED_INSUFFICIENT_AVAILABLE_MARGIN",
+            f"required_margin_usd={required_margin_usd:.2f} > avail_bal_usd={avail_bal_usd:.2f}",
+        )
+
     if bids and asks and min_top5_usd < min_top5_depth_ratio * notional_usd:
         _add_rejection(
             rejections,
@@ -222,7 +292,7 @@ def evaluate_preflight(payload: dict) -> dict:
             f"min_top5_usd={min_top5_usd:.2f} < {min_top5_depth_ratio:.1f}x notional ({notional_usd:.2f})",
         )
 
-    # 5. Friction & Net Weighted R:R
+    # 5. Friction & Net Weighted R:R (friction applied to both TP reward and SL loss)
     fee_round_trip_rate = 2.0 * taker_fee_rate
     half_spread_rate = ((spread_bps or 0.0) / 10000.0) / 2.0
     entry_spread_rate = half_spread_rate if ord_type == "market" else 0.0
@@ -235,8 +305,11 @@ def evaluate_preflight(payload: dict) -> dict:
     friction_px = entry * total_friction_rate
     friction_r = friction_px / r_dist
 
+    tp1_gross_rr = abs(tp1 - entry) / r_dist
+    tp1_net_rr = max(0.0, tp1_gross_rr - friction_r) / (1.0 + friction_r)
+
     planned_gross_rr = (w1 * abs(tp1 - entry) + (w2 * abs(tp2 - entry) if tp2 is not None else 0.0)) / r_dist
-    planned_net_rr = planned_gross_rr - friction_r
+    planned_net_rr = max(0.0, planned_gross_rr - friction_r) / (1.0 + friction_r)
 
     if tp2 is not None and total_sz_dec > 0 and tranche1_sz_dec > 0 and tranche2_sz_dec > 0:
         eff_w1 = float(tranche1_sz_dec / total_sz_dec)
@@ -245,7 +318,14 @@ def evaluate_preflight(payload: dict) -> dict:
         eff_w1, eff_w2 = w1, w2
 
     effective_gross_rr = (eff_w1 * abs(tp1 - entry) + (eff_w2 * abs(tp2 - entry) if tp2 is not None else 0.0)) / r_dist
-    effective_net_rr = effective_gross_rr - friction_r
+    effective_net_rr = max(0.0, effective_gross_rr - friction_r) / (1.0 + friction_r)
+
+    if tp2 is not None and tp1_net_rr < min_tp1_rr:
+        _add_rejection(
+            rejections,
+            "REJECTED_TP1_RR_BELOW_MIN",
+            f"tp1_net_rr={tp1_net_rr:.3f} < min_tp1_rr={min_tp1_rr:.2f} (gross={tp1_gross_rr:.3f}, friction_r={friction_r:.3f})",
+        )
 
     if planned_net_rr < min_weighted_rr or effective_net_rr < min_weighted_rr:
         _add_rejection(
@@ -282,7 +362,7 @@ def evaluate_preflight(payload: dict) -> dict:
     # 7. Persistent Risk Ledger gate
     actual_risk_usd = total_sz * r_dist * ct_val
     actual_risk_pct = (actual_risk_usd / equity_usd) if total_sz > 0 else risk_pct
-    ledger_gate = check_pre_trade_risk(inst_id, actual_risk_pct, ledger_path=ledger_path)
+    ledger_gate = check_pre_trade_risk(inst_id, actual_risk_pct, side=side, ledger_path=ledger_path)
     if not ledger_gate["passed"]:
         _add_rejection(
             rejections,
@@ -334,6 +414,7 @@ def evaluate_preflight(payload: dict) -> dict:
         "rejections": rejections,
         "metrics": {
             "one_r_px": round(r_dist, 6),
+            "stop_pct": round(stop_pct, 6),
             "risk_usd_target": round(risk_usd, 4),
             "risk_usd_actual": round(actual_risk_usd, 4),
             "actual_risk_pct": round(actual_risk_pct, 6),
@@ -341,6 +422,7 @@ def evaluate_preflight(payload: dict) -> dict:
             "tranche1_sz": float(tranche1_sz_dec),
             "tranche2_sz": float(tranche2_sz_dec),
             "notional_usd": round(notional_usd, 2),
+            "required_margin_usd": round(required_margin_usd, 2),
             "spread_bps": round(spread_bps, 4) if spread_bps is not None else None,
             "bid_top5_usd": round(bid_top5_usd, 2),
             "ask_top5_usd": round(ask_top5_usd, 2),
@@ -348,6 +430,7 @@ def evaluate_preflight(payload: dict) -> dict:
             "taker_fee_rate": taker_fee_rate,
             "funding_cost_rate": round(funding_cost_rate, 6),
             "friction_r": round(friction_r, 4),
+            "tp1_net_rr": round(tp1_net_rr, 4),
             "gross_weighted_rr": round(effective_gross_rr, 4),
             "net_weighted_rr": round(effective_net_rr, 4),
             "liq_px": round(liq_px, 4),

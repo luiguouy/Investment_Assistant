@@ -1,6 +1,10 @@
 {
   "defaults": {
     "min_weighted_rr": 2.5,
+    "min_tp1_rr": 1.2,
+    "min_stop_pct": 0.003,
+    "max_stop_pct": 0.08,
+    "max_leverage": 20.0,
     "max_spread_bps": 5.0,
     "min_top5_depth_ratio": 3.0,
     "default_taker_fee_bps": 5.0,
@@ -20,7 +24,8 @@
     "stock_token": {
       "min_liq_distance_r": 4.0,
       "avoid_weekend_full_size": true,
-      "avoid_earnings_gap": true
+      "avoid_earnings_gap": true,
+      "long_only": true
     }
   },
   "instruments": {
@@ -50,6 +55,36 @@
       "enabled": true
     },
     "TSLA-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "GOOGL-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "QQQ-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "SPY-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "AMD-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "MU-USDT-SWAP": {
+      "perp_type": "stock_token",
+      "bucket": "us_mega_tech",
+      "enabled": true
+    },
+    "SOXX-USDT-SWAP": {
       "perp_type": "stock_token",
       "bucket": "us_mega_tech",
       "enabled": true

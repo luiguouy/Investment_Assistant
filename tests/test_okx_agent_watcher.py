@@ -109,6 +109,48 @@ class TestOkxAgentWatcher(unittest.TestCase):
         self.assertEqual(res["exit_code"], 4)
         self.assertEqual(res["polls"], 3)
 
+    def test_p1_wick_detection_trail_milestone_and_time_stop(self):
+        # 1m candle high wicked past TP1 even though last pulled back -> still triggers TP1_BE
+        res_wick = run_watcher(
+            inst_id="BTC-USDT-SWAP",
+            side="buy",
+            tp1=103000.0,
+            sl=99000.0,
+            interval_sec=0.0,
+            price_fetcher=lambda _s: {"last": 102100.0, "high": 103050.0, "low": 102000.0},
+            sleep_fn=lambda _t: None,
+        )
+        self.assertEqual(res_wick["event"], "TP1_BE")
+        self.assertEqual(res_wick["exit_code"], 0)
+
+        # Trail milestone wakeup
+        res_trail = run_watcher(
+            inst_id="BTC-USDT-SWAP",
+            side="buy",
+            sl=100100.0,
+            trail_milestone_px=104000.0,
+            interval_sec=0.0,
+            price_fetcher=lambda _s: 104050.0,
+            sleep_fn=lambda _t: None,
+        )
+        self.assertEqual(res_trail["event"], "TRAIL_MILESTONE")
+
+        # Time stop review after max_hold_sec
+        ticks = iter([0.0, 100.0, 4000.0])
+        res_time = run_watcher(
+            inst_id="BTC-USDT-SWAP",
+            side="buy",
+            tp1=103000.0,
+            sl=99000.0,
+            max_hold_sec=3600.0,
+            interval_sec=0.0,
+            price_fetcher=lambda _s: 100500.0,
+            sleep_fn=lambda _t: None,
+            clock_fn=lambda: next(ticks),
+        )
+        self.assertEqual(res_time["event"], "TIME_STOP_REVIEW")
+        self.assertEqual(res_time["exit_code"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
